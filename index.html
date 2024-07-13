@@ -4,8 +4,45 @@
   <style>
     #map {
       width: 100%;
-      height: 400px;
+      height: 100%;
     }
+	#controller {
+	  background: rgba(255,255,255,0);
+	  padding: 0.5rem;
+	  float: left;
+	  position: absolute;
+	  bottom: 20px;
+	  left: 50%;
+	  transform: translateX(-50%);
+	  z-index: 100;
+	  text-align: center;
+	}
+	i.fa {
+	  padding: 0rem 1rem;
+	}
+	.speedbtn i {
+	  padding: 0rem 0rem;
+	}
+
+    div.txt {
+      overflow-x: clip;
+	  text-wrap: nowrap;
+	  background: rgba(255,255,255,0.5);
+	  border-radius: 10px;
+	  display: inline-block;
+    }
+
+	#speed {
+	  padding: 0 0.5rem;
+	  width: 3rem;
+	}
+	
+	#info {
+	  padding: 0 1rem;
+	  width: 14rem;
+	}
+	
+	
   </style>
   <title>GeoMet Animated WMS Time OpenLayers Example</title>
   <meta name="description" content="GeoMet OpenLayers Example">
@@ -18,16 +55,21 @@
 </head>
 
 <body>
-  <div id="map"></div>
-  <div id="controller" role="group" aria-label="Animation controls" style="background: #ececec; padding: 0.5rem;">
-    <button id="fast-backward" class="btn btn-primary btn-sm" type="button"><i class="fa fa-fast-backward" style="padding: 0rem 1rem"></i></button>
-    <button id="step-backward" class="btn btn-primary btn-sm" type="button"><i class="fa fa-step-backward" style="padding: 0rem 1rem"></i></button>
-    <button id="play-pause" class="btn btn-primary btn-sm" type="button"><i class="fa fa-play" style="padding: 0rem 1rem"></i></button>
-    <button id="step-forward" class="btn btn-primary btn-sm" type="button"><i class="fa fa-step-forward" style="padding: 0rem 1rem"></i></button>
-    <button id="fast-forward" class="btn btn-primary btn-sm" type="button"><i class="fa fa-fast-forward" style="padding: 0rem 1rem"></i></button>
-    <span id="info" style="padding-left: 0.5rem;"></span>
+  <div id="map">
+  <div id="controller" role="group" aria-label="Animation controls">
+    <button id="fast-backward" class="btn btn-primary btn-sm" type="button"><i class="fa fa-fast-backward"></i></button>
+    <button id="step-backward" class="btn btn-primary btn-sm" type="button"><i class="fa fa-step-backward"></i></button>
+    <button id="play-pause" class="btn btn-primary btn-sm" type="button"><i class="fa fa-play"></i></button>
+    <button id="step-forward" class="btn btn-primary btn-sm" type="button"><i class="fa fa-step-forward"></i></button>
+    <button id="fast-forward" class="btn btn-primary btn-sm" type="button"><i class="fa fa-fast-forward"></i></button>
+	<br />
+    <div id="info" class="txt"></div>
+    <button id="speed-down" class="btn btn-primary btn-sm speedbtn" type="button"><i class="fa fa-minus"></i></button>
+	<div id="speed" class="txt"></div>
+    <button id="speed-up" class="btn btn-primary btn-sm speedbtn" type="button"><i class="fa fa-plus"></i></button>
+    <button id="timespan" class="btn btn-primary btn-sm speedbtn" type="button"><i class="fa fa-hourglass-half"></i></button>
   </div>
-
+</div>
   <script src="./tutorial.js"></script>
 </body>
 </html>

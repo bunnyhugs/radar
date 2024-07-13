@@ -11,6 +11,7 @@ const parser = new DOMParser();
 
 // Async function used to retrieve start and end time from RADAR_1KM_RRAI layer GetCapabilities document
 async function getRadarStartEndTime() {
+  // console.log("retrieve new data");
   let response = await fetch('https://geo.weather.gc.ca/geomet/?lang=en&service=WMS&request=GetCapabilities&version=1.3.0&LAYERS=RADAR_1KM_RRAI&t=' + new Date().getTime())
   let data = await response.text().then(
     data => {
@@ -87,16 +88,45 @@ let map = new ol.Map({
   })
 });
 
-// If the image couldn't load due to a change in the time extent, get the new time extent
-layers[1].getSource().on("imageloaderror", () => {
+
+function getStartTime() {
+  let newStartTime = new Date(endTime);
+  newStartTime.setUTCMinutes(newStartTime.getUTCMinutes() - 60 * timespan);
+  if (newStartTime < startTime) {
+	  return startTime;
+  } else {
+	  return newStartTime;
+  }
+}
+
+function refreshTimes(currentIsLastFrame) {
   getRadarStartEndTime().then(data => {
-    currentTime = startTime = data[0];
+    startTime = data[0];
     endTime = data[1];
     defaultTime = data[2];
+	if (currentIsLastFrame) {
+		currentTime = endTime;
+	} else {
+		currentTime = getStartTime();
+	}
+	// console.log("start end default current");
+	// console.log(startTime);
+	// console.log(endTime);
+	// console.log(defaultTime);
+	// console.log(currentTime);
     updateLayers();
     updateInfo();
     updateButtons();
-  })
+  });
+  
+  // Call the function to check weather image existence
+  checkWeatherImageExists();
+  
+}
+
+// If the image couldn't load due to a change in the time extent, get the new time extent
+layers[1].getSource().on("imageloaderror", () => {
+  refreshTimes();
 });
 
 function updateLayers() {
@@ -150,7 +180,7 @@ function enableButtons(buttons) {
 function setTime() {
   if (currentTime >= endTime) {
     // last frame
-	console.log(endTime);
+	// console.log(endTime);
     currentTime = endTime;
     togglePlayPause();
 	// restart
@@ -179,14 +209,7 @@ function togglePlayPause() {
 
 function fastBackward() {
   if (animationId == null && currentTime > startTime) {
-    getRadarStartEndTime().then(data => {
-      currentTime = startTime = data[0];
-      endTime = data[1];
-      defaultTime = data[2];
-      updateLayers();
-      updateInfo();
-      updateButtons();
-    })
+    refreshTimes();
   }
 }
 
@@ -195,14 +218,7 @@ function stepBackward() {
     currentTime = new Date(currentTime);
     currentTime.setUTCMinutes(currentTime.getUTCMinutes() - 6);
     if (currentTime.getTime() === startTime.getTime()) {
-		getRadarStartEndTime().then(data => {
-		  currentTime = startTime = data[0];
-		  endTime = data[1];
-		  defaultTime = data[2];
-		  updateLayers();
-		  updateInfo();
-		  updateButtons();
-		});
+		refreshTimes();
     }
     else {
       updateLayers();
@@ -254,9 +270,11 @@ function toggleTimespan() {
 	 if (iconElement.classList.contains('fa-hourglass-half')) {
         iconElement.classList.remove('fa-hourglass-half');
         iconElement.classList.add('fa-hourglass-start');
+		timespan = 3;
       } else {
         iconElement.classList.remove('fa-hourglass-start');
         iconElement.classList.add('fa-hourglass-half');
+		timespan = 1;
       }
 }
 
@@ -294,7 +312,61 @@ function initMap() {
 	updateLayers();
     updateInfo();
     updateButtons();
+
+
     window.setTimeout(togglePlayPause, 2000);
   })
 }
 initMap();
+
+
+async function checkWeatherImageExists() {
+    // Create a date object
+    let currentDate = endTime;
+
+    // Function to format date to desired string format
+    function formatDate(date) {
+        let year = date.getUTCFullYear();
+        let month = String(date.getUTCMonth() + 1).padStart(2, '0');
+        let day = String(date.getUTCDate()).padStart(2, '0');
+        let hours = String(date.getUTCHours()).padStart(2, '0');
+        let minutes = String(date.getUTCMinutes()).padStart(2, '0');
+        return `${year}${month}${day}${hours}${minutes}`;
+    }
+
+    // Get the formatted date prefix
+    let datePrefix = formatDate(currentDate);
+
+    // Add 6 minutes to the current date
+    currentDate.setUTCMinutes(currentDate.getUTCMinutes() + 6);
+    let datePrefixPlus6 = formatDate(currentDate);
+
+    // Create URLs with the date prefixes
+    let url1 = `./CAPPI/${datePrefix}_CASCV_CAPPI_1.5_RAIN.gif`;
+    let url2 = `./CAPPI/${datePrefixPlus6}_CASCV_CAPPI_1.5_RAIN.gif`;
+
+    // Function to check if URL exists
+    async function urlExists(url) {
+        try {
+            const response = await fetch(url);
+			console.log(response);
+            return response.ok;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    // Check if URL with added 6 minutes exists
+    let url1Exists = await urlExists(url1);
+    if (url1Exists) {
+        console.log(`URL '${url1}' exists.`);
+    } else {
+        // Check if URL without added 6 minutes exists
+        let url2Exists = await urlExists(url2);
+        if (url2Exists) {
+            console.log(`URL '${url2}' exists.`);
+        } else {
+            console.log(`Neither '${url1}' nor '${url2}' exists.`);
+        }
+    }
+}

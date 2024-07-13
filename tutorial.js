@@ -1,4 +1,11 @@
-/* Name of the file: tutorial.js */
+let frameRate = 3;
+const maxFrameRate = 12;
+let timespan = 1;
+let animationId = null;
+let startTime = null;
+let endTime = null;
+let defaultTime = null;
+let currentTime = null;
 
 const parser = new DOMParser();
 
@@ -16,12 +23,33 @@ async function getRadarStartEndTime() {
   return [new Date(data[0]), new Date(data[1]), new Date(data[2])];
 }
 
-let frameRate = 1.0;
-let animationId = null;
-let startTime = null;
-let endTime = null;
-let defaultTime = null;
-let currentTime = null;
+function formatISOToLocal(isoString) {
+  const date = new Date(isoString);
+
+  // Use toLocaleString with options to get the time string
+  const timeOptions = {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+	timeZoneName: 'short',
+  };
+
+  // Use toLocaleDateString with 'en-CA' locale to get the date in YYYY-MM-DD format
+  const dateOptions = {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  };
+
+  let timeString = date.toLocaleString('en-US', timeOptions);
+  let dateString = date.toLocaleDateString('en-CA', dateOptions);
+
+  // Remove any space before 'AM' or 'PM'
+  timeString = timeString.replace(' AM', 'am').replace(' PM', 'pm');
+
+  return `${timeString} ${dateString}`;
+}
+
 
 let layers = [
   new ol.layer.Tile({
@@ -33,7 +61,9 @@ let layers = [
       url: 'https://geo.weather.gc.ca/geomet/',
       params: {'LAYERS': 'RADAR_1KM_RRAI', 'TILED': true},
       crossOrigin: 'Anonymous'
-    })
+    }),
+	opacity: 0.5
+	
   }),
   new ol.layer.Image({
     source: new ol.source.ImageWMS({
@@ -42,7 +72,9 @@ let layers = [
       params: {'LAYERS': 'RADAR_COVERAGE_RRAI.INV', 'TILED': true},
       transition: 0,
       crossOrigin: 'Anonymous'
-    })
+    }),
+	opacity: 0.5
+
   })
 ];
 
@@ -50,8 +82,8 @@ let map = new ol.Map({
   target: 'map',
   layers: layers,
   view: new ol.View({
-    center: ol.proj.fromLonLat([-97, 57]),
-    zoom: 3
+    center: ol.proj.fromLonLat([-113.4937, 53.5461]),
+    zoom: 9.5
   })
 });
 
@@ -74,7 +106,15 @@ function updateLayers() {
 
 function updateInfo() {
   let el = document.getElementById('info');
-  el.innerHTML = `Time / Heure: ${currentTime.toISOString().substr(0, 16)+"Z"}`
+  el.innerHTML = `${formatISOToLocal(currentTime.toISOString().substr(0, 16)+"Z")}`
+  
+  el = document.getElementById('speed');
+  el.innerHTML = `${frameRate}x`
+}
+
+function restartAnimation() {
+	fastBackward();
+    togglePlayPause();
 }
 
 // Disable/enable buttons depending on the state of the map
@@ -87,7 +127,7 @@ function updateButtons() {
       disableButtons([fastBackwardButton, stepBackwardButton]);
       enableButtons([playPauseButton, stepForwardButton, fastForwardButton]);
     } else if (currentTime >= endTime) {
-      disableButtons([playPauseButton, stepForwardButton, fastForwardButton]);
+	  // disableButtons([playPauseButton, stepForwardButton, fastForwardButton]);
       enableButtons([fastBackwardButton, stepBackwardButton]);
     } else {
       enableButtons([fastBackwardButton, stepBackwardButton, playPauseButton, stepForwardButton, fastForwardButton]);
@@ -109,8 +149,13 @@ function enableButtons(buttons) {
 
 function setTime() {
   if (currentTime >= endTime) {
+    // last frame
+	console.log(endTime);
     currentTime = endTime;
     togglePlayPause();
+	// restart
+	window.setTimeout(restartAnimation, 2000 / frameRate);
+
   } else {
     currentTime = new Date(currentTime);
     currentTime.setUTCMinutes(currentTime.getUTCMinutes() + 6);
@@ -150,14 +195,14 @@ function stepBackward() {
     currentTime = new Date(currentTime);
     currentTime.setUTCMinutes(currentTime.getUTCMinutes() - 6);
     if (currentTime.getTime() === startTime.getTime()) {
-      getRadarStartEndTime().then(data => {
-        currentTime = startTime = data[0];
-        endTime = data[1];
-        defaultTime = data[2];
-        updateLayers();
-        updateInfo();
-        updateButtons();
-      })
+		getRadarStartEndTime().then(data => {
+		  currentTime = startTime = data[0];
+		  endTime = data[1];
+		  defaultTime = data[2];
+		  updateLayers();
+		  updateInfo();
+		  updateButtons();
+		});
     }
     else {
       updateLayers();
@@ -186,6 +231,35 @@ function fastForward() {
   }
 }
 
+function speedUp() {
+	frameRate += 0.5;
+	if (frameRate >= maxFrameRate) {
+		frameRate = maxFrameRate;
+	}
+	togglePlayPause();
+	togglePlayPause();
+}
+
+function speedDown() {
+	frameRate -= 0.5;
+	if (frameRate <= 0.5) {
+		frameRate = 0.5;
+	}
+	togglePlayPause();
+	togglePlayPause();
+}
+
+function toggleTimespan() {
+	var iconElement = document.querySelector('#timespan i');
+	 if (iconElement.classList.contains('fa-hourglass-half')) {
+        iconElement.classList.remove('fa-hourglass-half');
+        iconElement.classList.add('fa-hourglass-start');
+      } else {
+        iconElement.classList.remove('fa-hourglass-start');
+        iconElement.classList.add('fa-hourglass-half');
+      }
+}
+
 let fastBackwardButton = document.getElementById('fast-backward');
 fastBackwardButton.addEventListener('click', fastBackward, false);
 
@@ -201,15 +275,26 @@ stepForwardButton.addEventListener('click', stepForward, false);
 let fastForwardButton = document.getElementById('fast-forward');
 fastForwardButton.addEventListener('click', fastForward, false);
 
+let speedUpButton = document.getElementById('speed-up');
+speedUpButton.addEventListener('click', speedUp, false);
+
+let speedDownButton = document.getElementById('speed-down');
+speedDownButton.addEventListener('click', speedDown, false);
+
+let timespanButton = document.getElementById('timespan');
+timespanButton.addEventListener('click', toggleTimespan, false);
+
 // Initialize the map
 function initMap() {
   getRadarStartEndTime().then(data => {
     startTime = data[0];
     endTime = data[1];
-    currentTime = defaultTime = data[2];
-    updateLayers();
+    currentTime = defaultTime = data[2]; // end
+    // currentTime = startTime = data[0]; // start
+	updateLayers();
     updateInfo();
     updateButtons();
+    window.setTimeout(togglePlayPause, 2000);
   })
 }
 initMap();

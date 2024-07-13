@@ -42,7 +42,21 @@
 	  width: 14rem;
 	}
 	
-	
+  #legendPopup {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1000;
+    background: white;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+    padding: 20px;
+    max-width: 80%;
+    max-height: 80%;
+    overflow: auto;
+  }
+  
   </style>
   <title>GeoMet Animated WMS Time OpenLayers Example</title>
   <meta name="description" content="GeoMet OpenLayers Example">
@@ -62,6 +76,7 @@
     <button id="play-pause" class="btn btn-primary btn-sm" type="button"><i class="fa fa-play"></i></button>
     <button id="step-forward" class="btn btn-primary btn-sm" type="button"><i class="fa fa-step-forward"></i></button>
     <button id="fast-forward" class="btn btn-primary btn-sm" type="button"><i class="fa fa-fast-forward"></i></button>
+    <button id="legendBtn" class="btn btn-primary btn-sm speedbtn" type="button"><i class="fa fa-question"></i></button>
 	<br />
     <div id="info" class="txt"></div>
     <button id="speed-down" class="btn btn-primary btn-sm speedbtn" type="button"><i class="fa fa-minus"></i></button>
@@ -70,6 +85,10 @@
     <button id="timespan" class="btn btn-primary btn-sm speedbtn" type="button"><i class="fa fa-hourglass-half"></i></button>
   </div>
 </div>
+  <div id="legendPopup">
+  <img src="./geometLegend.png" alt="Legend Image" id="legendImage">
+</div>
+
   <script src="./tutorial.js"></script>
 </body>
 </html>

@@ -86,7 +86,10 @@ let layers = [
 let map = new ol.Map({
     target: 'map',
     layers: layers,
-    view: new ol.View({
+	interactions: ol.interaction.defaults.defaults({
+		pinchRotate: false
+	}),
+	view: new ol.View({
         center: ol.proj.fromLonLat([-113.4937, 53.5461]),
         zoom: 9.5
     })
@@ -377,6 +380,10 @@ async function checkWeatherImageExists() {
             // console.log(`URL '${url2}' exists.`);
         } else {
             console.log(`Neither '${url1}' nor '${url2}' exists.`);
+			let radarBackup1 = document.getElementById("radarbackup1");
+			let radarBackup2 = document.getElementById("radarbackup2");
+			radarBackup1.src = `https://dd.weather.gc.ca/radar/CAPPI/GIF/CASCV/${datePrefixPlus6}_CASCV_CAPPI_1.5_RAIN.gif`;
+			radarBackup2.src = `https://dd.weather.gc.ca/radar/CAPPI/GIF/CASCV/${datePrefix}_CASCV_CAPPI_1.5_RAIN.gif`;
         }
     }
 }

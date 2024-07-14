@@ -73,6 +73,11 @@
 	left: 0;
   }
     img.overlay {
-        z-index: 1; /* Ensure this image is on top */
+        z-index: 50; /* Ensure this image is on top */
     }
-  
+  #radarbackup1 {
+	  z-index: 40;
+  }
+  #radarbackup2 {
+	  z-indx: 30;
+  }

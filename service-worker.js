@@ -6,7 +6,11 @@ const filesToCache = [
 "./index.html",
 "./overlay.png",
 "./radarMap.js",
-"./style.css"
+"./style.css",
+"./bootstrap.min.css",
+"./all.min.css",
+"./ol.css",
+"ol.js"
 ];
 
 /*

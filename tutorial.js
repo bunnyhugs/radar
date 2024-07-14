@@ -356,6 +356,8 @@ async function checkWeatherImageExists() {
         }
     }
 
+    let radarFetch = await urlExists('./getRadar.php');
+
     // Check if URL with added 6 minutes exists
     let url1Exists = await urlExists(url1);
     if (url1Exists) {
@@ -370,3 +372,59 @@ async function checkWeatherImageExists() {
         }
     }
 }
+
+  // Get references to the elements
+  const legendBtn = document.getElementById('legendBtn');
+  const legendPopup = document.getElementById('legendPopup');
+  const legendImage = document.getElementById('legendImage');
+  
+    // Function to show the popup
+  function showPopup() {
+    legendPopup.style.display = 'block';
+    // Make the popup draggable
+    makeDraggable(legendPopup);
+  }
+
+  // Function to hide the popup
+  function hidePopup() {
+    legendPopup.style.display = 'none';
+  }
+
+  // Function to make an element draggable
+  function makeDraggable(element) {
+    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+    element.onmousedown = dragMouseDown;
+
+    function dragMouseDown(e) {
+      e = e || window.event;
+      e.preventDefault();
+      pos3 = e.clientX;
+      pos4 = e.clientY;
+      document.onmouseup = closeDragElement;
+      document.onmousemove = elementDrag;
+    }
+
+    function elementDrag(e) {
+      e = e || window.event;
+      e.preventDefault();
+      pos1 = pos3 - e.clientX;
+      pos2 = pos4 - e.clientY;
+      pos3 = e.clientX;
+      pos4 = e.clientY;
+      element.style.top = (element.offsetTop - pos2) + "px";
+      element.style.left = (element.offsetLeft - pos1) + "px";
+    }
+
+    function closeDragElement() {
+      document.onmouseup = null;
+      document.onmousemove = null;
+    }
+  }
+
+  // Event listener for the button click
+  legendBtn.addEventListener('click', showPopup);
+
+  // Event listener to close popup when clicking outside the image
+  window.addEventListener('click', function(event) {
+      hidePopup();
+  });

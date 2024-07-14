@@ -15,12 +15,28 @@
 	  text-align: center;
 	}
 	i.fa {
-	  padding: 0rem 1em;
+	  padding: 0.3rem 1em;
 	}
 	.speedbtn i {
-	  padding: 0rem 0rem;
+	  padding: 0.3rem 0.3rem;
 	}
+	#info {
+	  padding: 0 1rem;
+	  width: 10rem;
+		text-align: center;
+    }
+	#controller button {
+		margin-bottom: 0.1rem;
+	}
+
+
+
 @media only screen and (max-width: 768px) {
+	#info {
+	  padding: 0 0.5rem;
+	  width: 7rem;
+		text-align: center;
+    }
 	#controller {
 		width: 100%;
 	}
@@ -33,29 +49,30 @@
 		width: 1.7rem;
 	}
 	.speedbtn i {
-	  padding: 0.5rem 0.5rem;
+	  padding: 0.5rem 0.4rem;
 	}
 }
+
+
+
     div.txt {
       overflow-x: clip;
 	  text-wrap: nowrap;
 	  background: rgba(255,255,255,0.5);
 	  border-radius: 10px;
 	  display: inline-block;
+	  width: 7rem;
+		text-align: center;
     }
 
 	#speed {
 	  padding: 0 0.5rem;
-	  width: 3rem;
+	  width: 2.5rem;
 	}
 	
-	#info {
-	  padding: 0 1rem;
-	  width: 13rem;
-		text-align: center;
-    }
     #infop {
-		text-align: right;
+		text-align: center;
+	  width: 7rem;
 	}
 	
   #legendPopup {

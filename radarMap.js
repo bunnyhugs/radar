@@ -58,14 +58,15 @@ function formatISOToLocal(isoString) {
         hour: 'numeric',
         minute: '2-digit',
         hour12: true,
-        timeZoneName: 'short',
+        // timeZoneName: 'short',
     };
 
     // Use toLocaleDateString with 'en-CA' locale to get the date in YYYY-MM-DD format
     const dateOptions = {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
+        // year: 'numeric',
+        // /month: '2-digit',
+        // day: '2-digit',
+		weekday: 'short',
     };
 
     let timeString = date.toLocaleString('en-US', timeOptions);

@@ -10,7 +10,10 @@ const filesToCache = [
 "./bootstrap.min.css",
 "./all.min.css",
 "./ol.css",
-"ol.js"
+"./ol.js",
+"./webfonts/fa-solid-900.woff2",
+"./webfonts/fa-solid-900.ttf"
+
 ];
 
 /*

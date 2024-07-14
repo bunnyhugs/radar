@@ -23,6 +23,33 @@ async function getRadarStartEndTime() {
         return [new Date(data[0]), new Date(data[1]), new Date(data[2])];
 }
 
+function formatISOToLocalTime(isoString) {
+    const date = new Date(isoString);
+
+    // Use toLocaleString with options to get the time string
+    const timeOptions = {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+        timeZoneName: 'short',
+    };
+
+    // Use toLocaleDateString with 'en-CA' locale to get the date in YYYY-MM-DD format
+    const dateOptions = {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    };
+
+    let timeString = date.toLocaleString('en-US', timeOptions);
+    let dateString = date.toLocaleDateString('en-CA', dateOptions);
+
+    // Remove any space before 'AM' or 'PM'
+    timeString = timeString.replace(' AM', 'am').replace(' PM', 'pm');
+
+    return `${timeString}`;
+}
+
 function formatISOToLocal(isoString) {
     const date = new Date(isoString);
 
@@ -235,7 +262,7 @@ function updateLayers() {
 }
 
 function updateInfo() {
-    let el = document.getElementById('info');
+    let el = document.getElementById('infop');
     el.innerHTML = `${formatISOToLocal(currentTime.toISOString().substr(0, 16) + "Z")}`
 
         el = document.getElementById('speed');
@@ -351,6 +378,7 @@ function speedUp() {
     if (frameRate >= maxFrameRate) {
         frameRate = maxFrameRate;
     }
+	updateInfo();
     togglePlayPause();
     togglePlayPause();
 }
@@ -360,6 +388,7 @@ function speedDown() {
     if (frameRate <= 0.5) {
         frameRate = 0.5;
     }
+	updateInfo();
     togglePlayPause();
     togglePlayPause();
 }
@@ -435,10 +464,12 @@ async function checkWeatherImageExists() {
 
     // Get the formatted date prefix
     let datePrefix = formatDate(currentDate);
+	let time = formatISOToLocalTime(currentDate.toISOString());
 
     // Add 6 minutes to the current date
     currentDate.setUTCMinutes(currentDate.getUTCMinutes() + 6);
     let datePrefixPlus6 = formatDate(currentDate);
+	let timePlus6 = formatISOToLocalTime(currentDate.toISOString());
 
     // Create URLs with the date prefixes
     let url1 = `./CAPPI/${datePrefixPlus6}_CASCV_CAPPI_1.5_RAIN.gif`;
@@ -457,16 +488,19 @@ async function checkWeatherImageExists() {
 
     let radarFetch = await urlExists('./getRadar.php');
     let radarImg = document.getElementById("radar");
+    let overlay = document.getElementById("overlay");
     // Check if URL with added 6 minutes exists
     let url1Exists = await urlExists(url1);
     if (url1Exists) {
         // console.log(`URL '${url1}' exists.`);
         radarImg.src = url1;
+		radarImg.alt = radarImg.title = overlay.alt = overlay.title = timePlus6;
     } else {
         // Check if URL without added 6 minutes exists
         let url2Exists = await urlExists(url2);
         if (url2Exists) {
             radarImg.src = url2;
+			radarImg.alt = radarImg.title = overlay.alt = overlay.title = time;
             // console.log(`URL '${url2}' exists.`);
         } else {
             console.log(`Neither '${url1}' nor '${url2}' exists.`);
@@ -474,6 +508,9 @@ async function checkWeatherImageExists() {
 			let radarBackup2 = document.getElementById("radarbackup2");
 			radarBackup1.src = `https://dd.weather.gc.ca/radar/CAPPI/GIF/CASCV/${datePrefixPlus6}_CASCV_CAPPI_1.5_RAIN.gif`;
 			radarBackup2.src = `https://dd.weather.gc.ca/radar/CAPPI/GIF/CASCV/${datePrefix}_CASCV_CAPPI_1.5_RAIN.gif`;
+			radarBackup1.alt = radarBackup1.title = overlay.alt = overlay.title = timePlus6;
+			radarBackup2.alt = radarBackup2.title = overlay.alt = overlay.title = time;
+
         }
     }
 }

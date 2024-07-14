@@ -15,12 +15,27 @@
 	  text-align: center;
 	}
 	i.fa {
-	  padding: 0rem 1rem;
+	  padding: 0rem 1em;
 	}
 	.speedbtn i {
 	  padding: 0rem 0rem;
 	}
-
+@media only screen and (max-width: 768px) {
+	#controller {
+		width: 100%;
+	}
+	#controller button {
+      opacity: 65%;
+		margin-bottom: 0.1rem;
+	}
+	i.fa {
+	  padding: 0.5rem 0.5rem;
+		width: 1.7rem;
+	}
+	.speedbtn i {
+	  padding: 0.5rem 0.5rem;
+	}
+}
     div.txt {
       overflow-x: clip;
 	  text-wrap: nowrap;
@@ -36,7 +51,11 @@
 	
 	#info {
 	  padding: 0 1rem;
-	  width: 14rem;
+	  width: 13rem;
+		text-align: center;
+    }
+    #infop {
+		text-align: right;
 	}
 	
   #legendPopup {

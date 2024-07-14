@@ -95,6 +95,96 @@ let map = new ol.Map({
     })
 });
 
+const createRings = (center, numRings, spacing) => {
+	const rings = [];
+	for (let i = 1; i <= numRings; i++) {
+		const radius = spacing * i;
+		const circle = new ol.geom.Circle(center, radius);
+		rings.push(new ol.Feature(circle));
+	}
+	return rings;
+};
+
+const updateRings = () => {
+	const center = ol.proj.toLonLat(map.getView().getCenter());
+	const transformedCenter = ol.proj.fromLonLat(center, 'EPSG:3857');
+	const numRings = 10;  // Adjust as needed
+	const spacing = 20000;  // 40 km in meters
+
+	const ringFeatures = createRings(transformedCenter, numRings, spacing);
+	ringSource.clear();
+	ringSource.addFeatures(ringFeatures);
+};
+
+const ringSource = new ol.source.Vector();
+const ringLayer = new ol.layer.Vector({
+	source: ringSource,
+	style: new ol.style.Style({
+		stroke: new ol.style.Stroke({
+			color: 'rgba(155, 0, 0, 0.25)',
+			width: 1,
+			lineDash: [10, 10]  // Dashed line style
+		})
+	})
+});
+
+map.addLayer(ringLayer);
+
+map.getView().on('change:center', updateRings);
+map.getView().on('change:resolution', updateRings);
+
+// Initial ring update
+updateRings();
+
+const ringToggleButton = document.getElementById('gridBtn');
+let ringsVisible = true;
+
+ringToggleButton.addEventListener('click', () => {
+	ringsVisible = !ringsVisible;
+	ringLayer.setVisible(ringsVisible);
+    if (ringsVisible) {
+		ringToggleButton.firstElementChild.className = "fa fa-circle-dot";
+	} else {
+		ringToggleButton.firstElementChild.className = "fa fa-circle";
+	}
+});
+
+/*
+const createGrid = (extent, spacing) => {
+	const gridLines = [];
+	const [minX, minY, maxX, maxY] = extent;
+	for (let x = minX; x <= maxX; x += spacing) {
+		gridLines.push(new ol.geom.LineString([[x, minY], [x, maxY]]));
+	}
+	for (let y = minY; y <= maxY; y += spacing) {
+		gridLines.push(new ol.geom.LineString([[minX, y], [maxX, y]]));
+	}
+	return gridLines;
+};
+const gridSpacing = 20000;  // 20 km in meters
+
+const extent = ol.proj.transformExtent([-180, -90, 180, 90], 'EPSG:4326', 'EPSG:3857');
+const gridLines = createGrid(extent, gridSpacing);
+
+const gridSource = new ol.source.Vector({
+	features: gridLines.map(line => new ol.Feature(line))
+});
+
+const gridLayer = new ol.layer.Vector({
+	source: gridSource,
+	style: new ol.style.Style({
+		stroke: new ol.style.Stroke({
+			color: 'rgba(0, 0, 0, 0.15)',
+			width: 1,
+			lineDash: [5, 100]
+		})
+	})
+});
+
+map.addLayer(gridLayer);
+*/
+
+
 function getStartTime() {
     let newStartTime = new Date(endTime);
     newStartTime.setUTCMinutes(newStartTime.getUTCMinutes() - 60 * timespan);

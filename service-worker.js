@@ -6,11 +6,23 @@ const filesToCache = [
 "./index.html",
 "./overlay.png",
 "./radarMap.js",
+"./manifest.json",
 "./style.css",
+"./screenshot.png",
 "./bootstrap.min.css",
 "./all.min.css",
 "./ol.css",
-"ol.js"
+"./ol.js",
+"./webfonts/fa-solid-900.woff2",
+"./webfonts/fa-solid-900.ttf",
+"./maskable_icon.png",
+"./maskable_icon_x128.png",
+"./maskable_icon_x192.png",
+"./maskable_icon_x384.png",
+"./maskable_icon_x48.png",
+"./maskable_icon_x512.png",
+"./maskable_icon_x72.png",
+"./maskable_icon_x96.png"
 ];
 
 /*

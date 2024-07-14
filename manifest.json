@@ -17,7 +17,7 @@
             "src": "./screenshot.png",
             "sizes": "1350x1800",
 			"form_factor": "narrow",
-			"label": "Schedule example"
+			"label": "Radar example"
         }
 	],
     "icons": [

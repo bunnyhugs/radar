@@ -1,7 +1,10 @@
 <?php
 
 // URL of the directory index
-$url = 'https://dd.weather.gc.ca/radar/CAPPI/GIF/CASCV/';
+// $url = 'https://dd.weather.gc.ca/radar/CAPPI/GIF/CASCV/';
+
+// Base root (date will be appended later)
+$baseUrl = 'https://dd.weather.gc.ca/';
 
 // Local folder to save downloaded files
 $localFolder = './CAPPI/';
@@ -100,7 +103,7 @@ function removeOldFiles($directory, $hours) {
 
     closedir($dir);
 }
-
+/*
 // Fetch the latest prefix from the directory listing
 $latestPrefix = fetchLatestPrefix($url);
 
@@ -108,6 +111,35 @@ $latestPrefix = fetchLatestPrefix($url);
 if (!empty($latestPrefix)) {
     $downloadedFiles = downloadFilesWithPrefix($url, $latestPrefix, $localFolder);
 }
+*/
+/**
+ * STEP 1: Try today's directory first
+ */
+$today = gmdate('Ymd');
+$url = $baseUrl . $today . '/WXO-DD/radar/CAPPI/GIF/CASCV/';
+
+$latestPrefix = fetchLatestPrefix($url);
+
+/**
+ * STEP 2: If nothing found, try yesterday (fallback)
+ */
+if (empty($latestPrefix)) {
+    $yesterday = gmdate('Ymd', time() - 86400);
+    $url = $baseUrl . $yesterday . '/WXO-DD/radar/CAPPI/GIF/CASCV/';
+    $latestPrefix = fetchLatestPrefix($url);
+}
+
+/**
+ * STEP 3: If prefix found, rebuild URL using its date
+ */
+if (!empty($latestPrefix)) {
+    $dateFromPrefix = substr($latestPrefix, 0, 8);
+
+    $url = $baseUrl . $dateFromPrefix . '/WXO-DD/radar/CAPPI/GIF/CASCV/';
+
+    $downloadedFiles = downloadFilesWithPrefix($url, $latestPrefix, $localFolder);
+}
+
 
 removeOldFiles($localFolder, 3); // Remove files older than 3 hours
 

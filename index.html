@@ -30,7 +30,6 @@
 	<link rel="apple-touch-icon" sizes="120x120" href="./icon_x120.png" />
 	<link rel="apple-touch-icon" sizes="76x76" href="./icon_x76.png" />
 	<link rel="apple-touch-icon" sizes="57x57" href="./icon_x57.png" />
-	
 
 
 	<meta property="og:type" content="website" />
@@ -56,25 +55,27 @@
 <body>
   <div id="map">
 <div id="radarInset">
-  <img src="./overlay.png" class="overlay">
+  <img src="./overlay.png" class="overlay" id="overlay">
   <img src="./overlay.png" class="radar" id="radar">
   <img src="./overlay.png" class="radar radarbackup" id="radarbackup1">
   <img src="./overlay.png" class="radar radarbackup" id="radarbackup2">
 </div>
   <div id="controller" role="group" aria-label="Animation controls">
-    <button id="fast-backward" class="btn btn-primary btn-sm" type="button"><i class="fa fa-fast-backward"></i></button>
-    <button id="step-backward" class="btn btn-primary btn-sm" type="button"><i class="fa fa-step-backward"></i></button>
-    <button id="play-pause" class="btn btn-primary btn-sm" type="button"><i class="fa fa-play"></i></button>
-    <button id="step-forward" class="btn btn-primary btn-sm" type="button"><i class="fa fa-step-forward"></i></button>
-    <button id="fast-forward" class="btn btn-primary btn-sm" type="button"><i class="fa fa-fast-forward"></i></button>
-    <button id="radarBtn" class="btn btn-primary btn-sm speedbtn" type="button"><i class="fas fa-satellite-dish"></i></button>
-    <button id="legendBtn" class="btn btn-primary btn-sm speedbtn" type="button"><i class="fa fa-question"></i></button>
-	<br />
-    <div id="info" class="txt"></div>
-    <button id="speed-down" class="btn btn-primary btn-sm speedbtn" type="button"><i class="fas fa-minus"></i></button>
+    <button id="fast-backward" class="btn btn-primary btn-sm" type="button" title="Jump to start"><i class="fa fa-fast-backward"></i></button>
+    <button id="step-backward" class="btn btn-primary btn-sm" type="button" title="Step backward"><i class="fa fa-step-backward"></i></button>
+    <button id="play-pause" class="btn btn-primary btn-sm" type="button" title="Play animation"><i class="fa fa-play"></i></button>
+    <button id="step-forward" class="btn btn-primary btn-sm" type="button" title="Step forward"><i class="fa fa-step-forward"></i></button>
+    <button id="fast-forward" class="btn btn-primary btn-sm" type="button" title="Jump to end"><i class="fa fa-fast-forward"></i></button>
+    <br />
+    <div id="info" class="txt"><span id="infop"></span></div>
+    <button id="speed-down" class="btn btn-primary btn-sm speedbtn" type="button" title="Decrease speed"><i class="fas fa-minus"></i></button>
 	<div id="speed" class="txt"></div>
-    <button id="speed-up" class="btn btn-primary btn-sm speedbtn" type="button"><i class="fa fa-plus"></i></button>
-    <button id="timespan" class="btn btn-primary btn-sm speedbtn" type="button"><i class="fas fa-hourglass-half"></i></button>
+    <button id="speed-up" class="btn btn-primary btn-sm speedbtn" type="button" title="Increase speed"><i class="fa fa-plus"></i></button>
+    <br />
+    <button id="radarBtn" class="btn btn-primary btn-sm speedbtn" type="button" title="Show latest radar"><i class="fas fa-satellite-dish"></i></button>
+    <button id="gridBtn" class="btn btn-primary btn-sm speedbtn" type="button" title="Show grid lines"><i class="fa fa-circle-dot"></i></button>
+    <button id="timespan" class="btn btn-primary btn-sm speedbtn" type="button" title="1 / 3 hr"><i class="fas fa-hourglass-half"></i></button>
+	<button id="legendBtn" class="btn btn-primary btn-sm speedbtn" type="button" title="Show legend"><i class="fa fa-question"></i></button>
   </div>
 </div>
 <div id="legendPopup">

@@ -1,4 +1,5 @@
 {
+
     "name": "Carvel Radar",
     "short_name": "Carvel Radar",
 	"description": "Carvel Radar.",
@@ -17,7 +18,7 @@
             "src": "./screenshot.png",
             "sizes": "1350x1800",
 			"form_factor": "narrow",
-			"label": "Schedule example"
+			"label": "Radar example"
         }
 	],
     "icons": [

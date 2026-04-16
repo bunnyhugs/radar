@@ -23,7 +23,7 @@ async function getRadarStartEndTime() {
         return [new Date(data[0]), new Date(data[1]), new Date(data[2])];
 }
 
-function formatISOToLocal(isoString) {
+function formatISOToLocalTime(isoString) {
     const date = new Date(isoString);
 
     // Use toLocaleString with options to get the time string
@@ -39,6 +39,34 @@ function formatISOToLocal(isoString) {
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
+    };
+
+    let timeString = date.toLocaleString('en-US', timeOptions);
+    let dateString = date.toLocaleDateString('en-CA', dateOptions);
+
+    // Remove any space before 'AM' or 'PM'
+    timeString = timeString.replace(' AM', 'am').replace(' PM', 'pm');
+
+    return `${timeString}`;
+}
+
+function formatISOToLocal(isoString) {
+    const date = new Date(isoString);
+
+    // Use toLocaleString with options to get the time string
+    const timeOptions = {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+        // timeZoneName: 'short',
+    };
+
+    // Use toLocaleDateString with 'en-CA' locale to get the date in YYYY-MM-DD format
+    const dateOptions = {
+        // year: 'numeric',
+        // /month: '2-digit',
+        // day: '2-digit',
+		weekday: 'short',
     };
 
     let timeString = date.toLocaleString('en-US', timeOptions);
@@ -95,6 +123,96 @@ let map = new ol.Map({
     })
 });
 
+const createRings = (center, numRings, spacing) => {
+	const rings = [];
+	for (let i = 1; i <= numRings; i++) {
+		const radius = spacing * i;
+		const circle = new ol.geom.Circle(center, radius);
+		rings.push(new ol.Feature(circle));
+	}
+	return rings;
+};
+
+const updateRings = () => {
+	const center = ol.proj.toLonLat(map.getView().getCenter());
+	const transformedCenter = ol.proj.fromLonLat(center, 'EPSG:3857');
+	const numRings = 10;  // Adjust as needed
+	const spacing = 20000;  // 40 km in meters
+
+	const ringFeatures = createRings(transformedCenter, numRings, spacing);
+	ringSource.clear();
+	ringSource.addFeatures(ringFeatures);
+};
+
+const ringSource = new ol.source.Vector();
+const ringLayer = new ol.layer.Vector({
+	source: ringSource,
+	style: new ol.style.Style({
+		stroke: new ol.style.Stroke({
+			color: 'rgba(155, 0, 0, 0.25)',
+			width: 1,
+			lineDash: [10, 10]  // Dashed line style
+		})
+	})
+});
+
+map.addLayer(ringLayer);
+
+map.getView().on('change:center', updateRings);
+map.getView().on('change:resolution', updateRings);
+
+// Initial ring update
+updateRings();
+
+const ringToggleButton = document.getElementById('gridBtn');
+let ringsVisible = true;
+
+ringToggleButton.addEventListener('click', () => {
+	ringsVisible = !ringsVisible;
+	ringLayer.setVisible(ringsVisible);
+    if (ringsVisible) {
+		ringToggleButton.firstElementChild.className = "fa fa-circle-dot";
+	} else {
+		ringToggleButton.firstElementChild.className = "fa fa-circle";
+	}
+});
+
+/*
+const createGrid = (extent, spacing) => {
+	const gridLines = [];
+	const [minX, minY, maxX, maxY] = extent;
+	for (let x = minX; x <= maxX; x += spacing) {
+		gridLines.push(new ol.geom.LineString([[x, minY], [x, maxY]]));
+	}
+	for (let y = minY; y <= maxY; y += spacing) {
+		gridLines.push(new ol.geom.LineString([[minX, y], [maxX, y]]));
+	}
+	return gridLines;
+};
+const gridSpacing = 20000;  // 20 km in meters
+
+const extent = ol.proj.transformExtent([-180, -90, 180, 90], 'EPSG:4326', 'EPSG:3857');
+const gridLines = createGrid(extent, gridSpacing);
+
+const gridSource = new ol.source.Vector({
+	features: gridLines.map(line => new ol.Feature(line))
+});
+
+const gridLayer = new ol.layer.Vector({
+	source: gridSource,
+	style: new ol.style.Style({
+		stroke: new ol.style.Stroke({
+			color: 'rgba(0, 0, 0, 0.15)',
+			width: 1,
+			lineDash: [5, 100]
+		})
+	})
+});
+
+map.addLayer(gridLayer);
+*/
+
+
 function getStartTime() {
     let newStartTime = new Date(endTime);
     newStartTime.setUTCMinutes(newStartTime.getUTCMinutes() - 60 * timespan);
@@ -145,7 +263,7 @@ function updateLayers() {
 }
 
 function updateInfo() {
-    let el = document.getElementById('info');
+    let el = document.getElementById('infop');
     el.innerHTML = `${formatISOToLocal(currentTime.toISOString().substr(0, 16) + "Z")}`
 
         el = document.getElementById('speed');
@@ -261,6 +379,7 @@ function speedUp() {
     if (frameRate >= maxFrameRate) {
         frameRate = maxFrameRate;
     }
+	updateInfo();
     togglePlayPause();
     togglePlayPause();
 }
@@ -270,6 +389,7 @@ function speedDown() {
     if (frameRate <= 0.5) {
         frameRate = 0.5;
     }
+	updateInfo();
     togglePlayPause();
     togglePlayPause();
 }
@@ -345,10 +465,12 @@ async function checkWeatherImageExists() {
 
     // Get the formatted date prefix
     let datePrefix = formatDate(currentDate);
+	let time = formatISOToLocalTime(currentDate.toISOString());
 
     // Add 6 minutes to the current date
     currentDate.setUTCMinutes(currentDate.getUTCMinutes() + 6);
     let datePrefixPlus6 = formatDate(currentDate);
+	let timePlus6 = formatISOToLocalTime(currentDate.toISOString());
 
     // Create URLs with the date prefixes
     let url1 = `./CAPPI/${datePrefixPlus6}_CASCV_CAPPI_1.5_RAIN.gif`;
@@ -367,16 +489,19 @@ async function checkWeatherImageExists() {
 
     let radarFetch = await urlExists('./getRadar.php');
     let radarImg = document.getElementById("radar");
+    let overlay = document.getElementById("overlay");
     // Check if URL with added 6 minutes exists
     let url1Exists = await urlExists(url1);
     if (url1Exists) {
         // console.log(`URL '${url1}' exists.`);
         radarImg.src = url1;
+		radarImg.alt = radarImg.title = overlay.alt = overlay.title = timePlus6;
     } else {
         // Check if URL without added 6 minutes exists
         let url2Exists = await urlExists(url2);
         if (url2Exists) {
             radarImg.src = url2;
+			radarImg.alt = radarImg.title = overlay.alt = overlay.title = time;
             // console.log(`URL '${url2}' exists.`);
         } else {
             console.log(`Neither '${url1}' nor '${url2}' exists.`);
@@ -384,6 +509,9 @@ async function checkWeatherImageExists() {
 			let radarBackup2 = document.getElementById("radarbackup2");
 			radarBackup1.src = `https://dd.weather.gc.ca/radar/CAPPI/GIF/CASCV/${datePrefixPlus6}_CASCV_CAPPI_1.5_RAIN.gif`;
 			radarBackup2.src = `https://dd.weather.gc.ca/radar/CAPPI/GIF/CASCV/${datePrefix}_CASCV_CAPPI_1.5_RAIN.gif`;
+			radarBackup1.alt = radarBackup1.title = overlay.alt = overlay.title = timePlus6;
+			radarBackup2.alt = radarBackup2.title = overlay.alt = overlay.title = time;
+
         }
     }
 }

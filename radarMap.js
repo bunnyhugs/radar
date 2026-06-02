@@ -253,6 +253,31 @@ layers[1].getSource().on("imageloaderror", () => {
     refreshTimes();
 });
 
+// --- Loading indicator for geo.weather.gc.ca WMS images ---
+const loadingIndicator = document.getElementById('loading-indicator');
+let pendingLoads = 0;
+
+function onImageLoadStart() {
+    pendingLoads++;
+    loadingIndicator.classList.add('is-loading');
+}
+
+function onImageLoadEnd() {
+    pendingLoads = Math.max(0, pendingLoads - 1);
+    if (pendingLoads === 0) {
+        loadingIndicator.classList.remove('is-loading');
+    }
+}
+
+// Attach to both WMS layers (radar data + coverage mask)
+[layers[1], layers[2]].forEach(layer => {
+    const src = layer.getSource();
+    src.on('imageloadstart', onImageLoadStart);
+    src.on('imageloadend', onImageLoadEnd);
+    src.on('imageloaderror', onImageLoadEnd);
+});
+// --- end loading indicator ---
+
 function updateLayers() {
     layers[1].getSource().updateParams({
         'TIME': currentTime.toISOString().split('.')[0] + "Z"

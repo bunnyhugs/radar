@@ -256,15 +256,28 @@ layers[1].getSource().on("imageloaderror", () => {
 // --- Loading indicator for geo.weather.gc.ca WMS images ---
 const loadingIndicator = document.getElementById('loading-indicator');
 let pendingLoads = 0;
+let showLoadingTimer = null;
+const LOADING_DEBOUNCE_MS = 150;
 
 function onImageLoadStart() {
     pendingLoads++;
-    loadingIndicator.classList.add('is-loading');
+    if (showLoadingTimer === null) {
+        showLoadingTimer = window.setTimeout(() => {
+            if (pendingLoads > 0) {
+                loadingIndicator.classList.add('is-loading');
+            }
+            showLoadingTimer = null;
+        }, LOADING_DEBOUNCE_MS);
+    }
 }
-
+ 
 function onImageLoadEnd() {
     pendingLoads = Math.max(0, pendingLoads - 1);
     if (pendingLoads === 0) {
+        if (showLoadingTimer !== null) {
+            window.clearTimeout(showLoadingTimer);
+            showLoadingTimer = null;
+        }
         loadingIndicator.classList.remove('is-loading');
     }
 }

@@ -111,6 +111,24 @@ let layers = [
     })
 ];
 
+// Restore the last saved view (center/zoom) if one exists, otherwise fall back
+// to the default view centred on Edmonton.
+const VIEW_STATE_KEY = 'radarViewState';
+ 
+const getSavedViewState = () => {
+	try {
+		const saved = JSON.parse(localStorage.getItem(VIEW_STATE_KEY));
+		if (saved && Array.isArray(saved.center) && typeof saved.zoom === 'number') {
+			return saved;
+		}
+	} catch (e) {
+		// Ignore malformed/inaccessible storage and fall back to defaults
+	}
+	return null;
+};
+ 
+const savedViewState = getSavedViewState();
+
 let map = new ol.Map({
     target: 'map',
     layers: layers,
@@ -118,10 +136,27 @@ let map = new ol.Map({
 		pinchRotate: false
 	}),
 	view: new ol.View({
-        center: ol.proj.fromLonLat([-113.4937, 53.5461]),
-        zoom: 9.5
+		center: savedViewState ? savedViewState.center : ol.proj.fromLonLat([-113.4937, 53.5461]),
+        zoom: savedViewState ? savedViewState.zoom : 9.5
     })
 });
+
+// Persist the current view (center/zoom) whenever the map finishes moving,
+// so it can be restored the next time this device opens the app.
+const saveViewState = () => {
+	const view = map.getView();
+	const state = {
+		center: view.getCenter(),
+		zoom: view.getZoom()
+	};
+	try {
+		localStorage.setItem(VIEW_STATE_KEY, JSON.stringify(state));
+	} catch (e) {
+		// localStorage may be unavailable (e.g. private browsing) - fail silently
+	}
+};
+ 
+map.on('moveend', saveViewState);
 
 const createRings = (center, numRings, spacing) => {
 	const rings = [];

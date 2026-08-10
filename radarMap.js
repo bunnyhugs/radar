@@ -9,7 +9,6 @@ let currentTime = null;
 
 const parser = new DOMParser();
 
-
 // Async function used to retrieve start and end time from RADAR_1KM_RRAI layer GetCapabilities document
 async function getRadarStartEndTime() {
     // console.log("retrieve new data");
@@ -79,43 +78,26 @@ function formatISOToLocal(isoString) {
     return `${timeString} ${dateString}`;
 }
 
+// The radar (RADAR_1KM_RRAI) and coverage-mask (RADAR_COVERAGE_RRAI.INV) layers
+// are no longer given a live ol.source.ImageWMS. Instead their source is a plain
+// ol.source.ImageStatic that we swap in ourselves (see the radar image cache
+// below), so that we control exactly when a new image is requested.
 let layers = [
     new ol.layer.Tile({
         source: new ol.source.OSM()
     }),
     new ol.layer.Image({
-        source: new ol.source.ImageWMS({
-            format: 'image/png',
-            url: 'https://geo.weather.gc.ca/geomet/',
-            params: {
-                'LAYERS': 'RADAR_1KM_RRAI',
-                'TILED': true
-            },
-            crossOrigin: 'Anonymous'
-        }),
         opacity: 0.5
-
     }),
     new ol.layer.Image({
-        source: new ol.source.ImageWMS({
-            format: 'image/png',
-            url: 'https://geo.weather.gc.ca/geomet/',
-            params: {
-                'LAYERS': 'RADAR_COVERAGE_RRAI.INV',
-                'TILED': true
-            },
-            transition: 0,
-            crossOrigin: 'Anonymous'
-        }),
         opacity: 0.5
-
     })
 ];
 
 // Restore the last saved view (center/zoom) if one exists, otherwise fall back
 // to the default view centred on Edmonton.
 const VIEW_STATE_KEY = 'radarViewState';
- 
+
 const getSavedViewState = () => {
 	try {
 		const saved = JSON.parse(localStorage.getItem(VIEW_STATE_KEY));
@@ -127,7 +109,7 @@ const getSavedViewState = () => {
 	}
 	return null;
 };
- 
+
 const savedViewState = getSavedViewState();
 
 let map = new ol.Map({
@@ -137,11 +119,10 @@ let map = new ol.Map({
 		pinchRotate: false
 	}),
 	view: new ol.View({
-		center: savedViewState ? savedViewState.center : ol.proj.fromLonLat([-113.4937, 53.5461]),
+        center: savedViewState ? savedViewState.center : ol.proj.fromLonLat([-113.4937, 53.5461]),
         zoom: savedViewState ? savedViewState.zoom : 9.5
     })
 });
-
 
 const citySource = new ol.source.Vector({
     url: './cities.geojson',
@@ -240,6 +221,7 @@ const lightningLayer = new ol.layer.Vector({
 
 map.addLayer(lightningLayer);
 
+
 // Persist the current view (center/zoom) whenever the map finishes moving,
 // so it can be restored the next time this device opens the app.
 const saveViewState = () => {
@@ -254,7 +236,7 @@ const saveViewState = () => {
 		// localStorage may be unavailable (e.g. private browsing) - fail silently
 	}
 };
- 
+
 map.on('moveend', saveViewState);
 
 const createRings = (center, numRings, spacing) => {
@@ -382,11 +364,6 @@ function refreshTimes(currentIsLastFrame) {
 
 }
 
-// If the image couldn't load due to a change in the time extent, get the new time extent
-layers[1].getSource().on("imageloaderror", () => {
-    refreshTimes();
-});
-
 // --- Loading indicator for geo.weather.gc.ca WMS images ---
 const loadingIndicator = document.getElementById('loading-indicator');
 let pendingLoads = 0;
@@ -404,7 +381,7 @@ function onImageLoadStart() {
         }, LOADING_DEBOUNCE_MS);
     }
 }
- 
+
 function onImageLoadEnd() {
     pendingLoads = Math.max(0, pendingLoads - 1);
     if (pendingLoads === 0) {
@@ -417,18 +394,108 @@ function onImageLoadEnd() {
 
 	showLightning();
 }
-
-// Attach to both WMS layers (radar data + coverage mask)
-[layers[1], layers[2]].forEach(layer => {
-    const src = layer.getSource();
-    src.on('imageloadstart', onImageLoadStart);
-    src.on('imageloadend', onImageLoadEnd);
-    src.on('imageloaderror', onImageLoadEnd);
-});
 // --- end loading indicator ---
 
-const lightningCache = new Map();
+// --- Fixed-area radar image cache ---
+// GeoMet's RADAR_1KM_RRAI layer has a native resolution of 1 km/pixel, and
+// its full-resolution image is 2880x1445 px - i.e. a 2880 km x 1445 km area.
+// Rather than requesting whatever small bbox happens to be on screen (which
+// would re-download on every tiny pan/zoom), we always request at least that
+// full-resolution area, centered on the current view, and cache the result
+// per timestamp. As long as the visible map stays within a cached frame's
+// area, no new request is made; a new image is only downloaded when the
+// user pans/zooms outside the cached area, or when a timestamp that hasn't
+// been downloaded yet is requested.
+const RADAR_LAYER_NAME = 'RADAR_1KM_RRAI';
+const COVERAGE_LAYER_NAME = 'RADAR_COVERAGE_RRAI.INV';
+const RADAR_RESOLUTION_M = 1000; // 1 km/pixel native resolution
+const RADAR_IMAGE_WIDTH_PX = 2880;
+const RADAR_IMAGE_HEIGHT_PX = 1445;
+const RADAR_AREA_WIDTH_M = RADAR_IMAGE_WIDTH_PX * RADAR_RESOLUTION_M;   // 2,880 km
+const RADAR_AREA_HEIGHT_M = RADAR_IMAGE_HEIGHT_PX * RADAR_RESOLUTION_M; // 1,445 km
+const MAX_CACHED_FRAMES = 24; // keep memory/blob-URL usage bounded
 
+// Map of TIME (ISO string) -> { extent, radarUrl, coverageUrl } for frames
+// that have already been downloaded, where radarUrl/coverageUrl are local
+// blob URLs (so re-displaying a cached frame never touches the network).
+const radarImageCache = new Map();
+
+// In-flight requests, keyed by TIME, so we don't fire duplicate downloads
+// for the same frame while one is already loading (e.g. rapid stepping).
+const pendingFrameRequests = new Map();
+
+function getTimeKey(date) {
+    return date.toISOString().split('.')[0] + 'Z';
+}
+
+// A fixed-size bbox (matching the source's native resolution/dimensions)
+// centered on the given map-projection center point.
+function getFixedExtentAroundCenter(center) {
+    const halfWidth = RADAR_AREA_WIDTH_M / 2;
+    const halfHeight = RADAR_AREA_HEIGHT_M / 2;
+    return [
+        center[0] - halfWidth,
+        center[1] - halfHeight,
+        center[0] + halfWidth,
+        center[1] + halfHeight
+    ];
+}
+
+async function fetchWmsImageBlobUrl(layerName, extent, timeKey) {
+    const params = new URLSearchParams({
+        SERVICE: 'WMS',
+        VERSION: '1.3.0',
+        REQUEST: 'GetMap',
+        FORMAT: 'image/png',
+        TRANSPARENT: 'true',
+        LAYERS: layerName,
+        CRS: 'EPSG:3857',
+        WIDTH: String(RADAR_IMAGE_WIDTH_PX),
+        HEIGHT: String(RADAR_IMAGE_HEIGHT_PX),
+        BBOX: extent.join(','),
+        TIME: timeKey
+    });
+    const response = await fetch(`https://geo.weather.gc.ca/geomet/?${params.toString()}`, {
+        mode: 'cors'
+    });
+    if (!response.ok) {
+        throw new Error(`WMS GetMap failed (${response.status}) for ${layerName} @ ${timeKey}`);
+    }
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+}
+
+function revokeCachedFrame(entry) {
+    URL.revokeObjectURL(entry.radarUrl);
+    URL.revokeObjectURL(entry.coverageUrl);
+}
+
+function evictOldestFrameIfNeeded() {
+    while (radarImageCache.size > MAX_CACHED_FRAMES) {
+        const oldestKey = radarImageCache.keys().next().value;
+        revokeCachedFrame(radarImageCache.get(oldestKey));
+        radarImageCache.delete(oldestKey);
+    }
+}
+
+function applyFrame(entry) {
+	
+    const projection = map.getView().getProjection();
+    layers[1].setSource(new ol.source.ImageStatic({
+        url: entry.radarUrl,
+        imageExtent: entry.extent,
+        projection: projection
+    }));
+    layers[2].setSource(new ol.source.ImageStatic({
+        url: entry.coverageUrl,
+        imageExtent: entry.extent,
+        projection: projection
+    }));
+
+	showLightning();
+}
+
+const lightningCache = new Map();
 
 async function updateLightning() {
 	const timestamp = currentTime.toISOString()
@@ -471,17 +538,78 @@ function showLightning() {
     }
 }
 
+// Ensure the given timestamp is displayed, downloading a new fixed-area
+// image only if it hasn't been cached yet, or the cached area no longer
+// covers the current view.
+async function loadRadarFrame(timeKey) {
+
+    const view = map.getView();
+    const viewExtent = view.calculateExtent(map.getSize());
+    const cached = radarImageCache.get(timeKey);
+
+    if (cached && ol.extent.containsExtent(cached.extent, viewExtent)) {
+        // Already have imagery covering the current view for this time.
+        applyFrame(cached);
+        return;
+    }
+
+    if (pendingFrameRequests.has(timeKey)) {
+        // A request for this timestamp is already in flight; let it finish
+        // rather than firing a duplicate download.
+        return;
+    }
+
+    const extent = getFixedExtentAroundCenter(view.getCenter());
+
+    onImageLoadStart();
+    const requestPromise = (async () => {
+        try {
+            const [radarUrl, coverageUrl] = await Promise.all([
+                fetchWmsImageBlobUrl(RADAR_LAYER_NAME, extent, timeKey),
+                fetchWmsImageBlobUrl(COVERAGE_LAYER_NAME, extent, timeKey)
+            ]);
+
+            const stale = radarImageCache.get(timeKey);
+            if (stale) {
+                revokeCachedFrame(stale);
+            }
+
+            const entry = { extent, radarUrl, coverageUrl };
+            radarImageCache.set(timeKey, entry);
+            evictOldestFrameIfNeeded();
+
+            // Only draw it if this is still the frame currently selected
+            // (avoids flicker back to a stale frame on slow connections).
+            if (currentTime && getTimeKey(currentTime) === timeKey) {
+                applyFrame(entry);
+            }
+        } catch (err) {
+            console.error(err);
+            // Likely requested a time outside the valid range - refresh it.
+            refreshTimes();
+        } finally {
+            onImageLoadEnd();
+            pendingFrameRequests.delete(timeKey);
+        }
+    })();
+
+    pendingFrameRequests.set(timeKey, requestPromise);
+    await requestPromise;
+}
+
+// Re-check the current frame whenever the view stops moving: if the user
+// panned/zoomed outside the cached area, this downloads a new fixed-area
+// image centered on the new view; otherwise it's a no-op.
+map.on('moveend', () => {
+    if (currentTime) {
+        loadRadarFrame(getTimeKey(currentTime));
+    }
+});
+// --- end fixed-area radar image cache ---
+
 function updateLayers() {
-    const time = currentTime.toISOString().split('.')[0] + "Z";
-
 	updateLightning();
-
-	layers[1].getSource().updateParams({
-        'TIME': time
-    });
-    layers[2].getSource().updateParams({
-        'TIME': time
-    });
+    loadRadarFrame(getTimeKey(currentTime));
 }
 
 function updateInfo() {

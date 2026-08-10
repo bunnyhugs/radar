@@ -440,7 +440,7 @@ async function updateLightning() {
         return;
     }
 
-    const url = `https://radar2.yamyam.ca/lightning.php?timestamp=${encodeURIComponent(timestamp)}`;
+    const url = `./api/lightning.php?timestamp=${encodeURIComponent(timestamp)}`;
 
     const response = await fetch(url);
     const data = await response.json();
@@ -695,8 +695,8 @@ async function checkWeatherImageExists() {
 	let timePlus6 = formatISOToLocalTime(currentDate.toISOString());
 
     // Create URLs with the date prefixes
-    let url1 = `./CAPPI/${datePrefixPlus6}_CASCV_CAPPI_1.5_RAIN.gif`;
-    let url2 = `./CAPPI/${datePrefix}_CASCV_CAPPI_1.5_RAIN.gif`;
+    let url1 = `./api/CAPPI/${datePrefixPlus6}_CASCV_CAPPI_1.5_RAIN.gif`;
+    let url2 = `./api/CAPPI/${datePrefix}_CASCV_CAPPI_1.5_RAIN.gif`;
 
     // Function to check if URL exists
     async function urlExists(url) {
@@ -709,7 +709,7 @@ async function checkWeatherImageExists() {
         }
     }
 
-    let radarFetch = await urlExists('./getRadar.php');
+    let radarFetch = await urlExists('./api/getRadar.php');
     let radarImg = document.getElementById("radar");
     let overlay = document.getElementById("overlay");
     // Check if URL with added 6 minutes exists

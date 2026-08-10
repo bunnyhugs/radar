@@ -1,4 +1,4 @@
-const cacheName = "music-festival-schedule-v21-efmf";
+const cacheName = "radar-v1.2";
 const filesToCache = [
     "./", // Add other URLs that need to be cached here
 "./favicon.ico",
@@ -13,6 +13,7 @@ const filesToCache = [
 "./all.min.css",
 "./ol.css",
 "./ol.js",
+"./cities.geojson",
 "./webfonts/fa-solid-900.woff2",
 "./webfonts/fa-solid-900.ttf",
 "./maskable_icon.png",

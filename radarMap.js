@@ -9,6 +9,7 @@ let currentTime = null;
 
 const parser = new DOMParser();
 
+
 // Async function used to retrieve start and end time from RADAR_1KM_RRAI layer GetCapabilities document
 async function getRadarStartEndTime() {
     // console.log("retrieve new data");
@@ -140,6 +141,73 @@ let map = new ol.Map({
         zoom: savedViewState ? savedViewState.zoom : 9.5
     })
 });
+
+
+const citySource = new ol.source.Vector({
+    url: './cities.geojson',
+    format: new ol.format.GeoJSON()
+});
+
+const cityLayer = new ol.layer.Vector({
+    source: citySource,
+    style: function(feature, resolution) {
+        const population = feature.get('population') || 0;
+        const zoom = map.getView().getZoom();
+
+        // Hide only very tiny places at world scale
+        if (
+            (zoom < 4 && population < 500000) ||
+            (zoom < 5 && population < 50000) ||
+            (zoom < 6 && population < 5000)
+        ) {
+            return null;
+        }
+
+        const radius =
+            population >= 1000000 ? 8 :
+            population >= 100000 ? 6 :
+            population >= 10000 ? 4 :
+            3;
+
+        const font =
+            population >= 1000000 ? 'bold 16px sans-serif' :
+            population >= 100000 ? 'bold 13px sans-serif' :
+            '12px sans-serif';
+
+        return new ol.style.Style({
+            image: new ol.style.Circle({
+                radius: radius,
+                fill: new ol.style.Fill({
+                    color: '#333'
+                }),
+                stroke: new ol.style.Stroke({
+                    color: '#fff',
+                    width: 2
+                })
+            }),
+            text: new ol.style.Text({
+                text: feature.get('name'),
+                font: font,
+                offsetX: 10,
+                textAlign: 'left',
+                fill: new ol.style.Fill({
+                    color: '#111'
+                }),
+                stroke: new ol.style.Stroke({
+                    color: '#fff',
+                    width: 3
+                })
+            })
+        });
+    }
+});
+
+layers.push(cityLayer);
+
+map.getView().on('change:resolution', () => {
+    cityLayer.changed();
+});
+
 
 // Persist the current view (center/zoom) whenever the map finishes moving,
 // so it can be restored the next time this device opens the app.

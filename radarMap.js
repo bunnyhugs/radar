@@ -394,12 +394,58 @@ function onImageLoadEnd() {
 });
 // --- end loading indicator ---
 
-function updateLayers() {
+const RADAR_WIDTH = 2880 * 1000;
+const RADAR_HEIGHT = 1445 * 1000;
+
+let radarRequestExtent = null;
+
+function getRadarRequestExtent() {
+    const viewExtent = map.getView().calculateExtent(map.getSize());
+    const center = ol.extent.getCenter(viewExtent);
+
+    const width = Math.max(
+        ol.extent.getWidth(viewExtent),
+        RADAR_WIDTH
+    );
+
+    const height = Math.max(
+        ol.extent.getHeight(viewExtent),
+        RADAR_HEIGHT
+    );
+
+    return [
+        center[0] - width / 2,
+        center[1] - height / 2,
+        center[0] + width / 2,
+        center[1] + height / 2
+    ];
+}
+
+function updateRadarExtent() {
+    radarRequestExtent = getRadarRequestExtent();
+
     layers[1].getSource().updateParams({
-        'TIME': currentTime.toISOString().split('.')[0] + "Z"
+        'BBOX': radarRequestExtent.join(',')
+    });
+
+    layers[2].getSource().updateParams({
+        'BBOX': radarRequestExtent.join(',')
+    });
+}
+
+function updateLayers() {
+    const time = currentTime.toISOString().split('.')[0] + "Z";
+	radarRequestExtent = getRadarRequestExtent();
+
+    if (!radarRequestExtent) {
+        updateRadarExtent();
+    }
+	
+    layers[1].getSource().updateParams({
+        'TIME': time
     });
     layers[2].getSource().updateParams({
-        'TIME': currentTime.toISOString().split('.')[0] + "Z"
+        'TIME': time
     });
 }
 
@@ -410,6 +456,15 @@ function updateInfo() {
         el = document.getElementById('speed');
     el.innerHTML = `${frameRate}x`
 }
+
+map.on('moveend', function() {
+    const viewExtent = map.getView().calculateExtent(map.getSize());
+
+    if (!radarRequestExtent ||
+        !ol.extent.containsExtent(radarRequestExtent, viewExtent)) {
+        updateRadarExtent();
+    }
+});
 
 function restartAnimation() {
     fastBackward();

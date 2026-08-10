@@ -3,12 +3,23 @@ import json
 
 features = []
 
+allowed_codes = {
+    "PPL",
+    "PPLA",
+    "PPLA2",
+    "PPLA3",
+    "PPLA4",
+    "PPLC",
+    "PPLG"
+}
+
 with open("CA.txt", encoding="utf-8") as f:
     for row in csv.reader(f, delimiter="\t"):
         feature_class = row[6]
+        feature_code = row[7]
         population = int(row[14] or 0)
 
-        if feature_class != "P" or population < 5000:
+        if feature_class != "P" or population < 5000 or feature_code not in allowed_codes:
             continue
 
         features.append({

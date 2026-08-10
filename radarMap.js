@@ -164,10 +164,10 @@ const cityLayer = new ol.layer.Vector({
         }
 
         const radius =
-            population >= 1000000 ? 8 :
+            population >= 800000 ? 0 :
             population >= 100000 ? 6 :
-            population >= 10000 ? 4 :
-            3;
+            population >= 7500 ? 4 :
+            0;
 
         const font =
             population >= 1000000 ? 'bold 16px sans-serif' :
@@ -178,13 +178,14 @@ const cityLayer = new ol.layer.Vector({
             image: new ol.style.Circle({
                 radius: radius,
                 fill: new ol.style.Fill({
-                    color: '#333'
+                    color: 'rgba(255,255,255,0.5)'
                 }),
                 stroke: new ol.style.Stroke({
-                    color: '#fff',
+                    color: 'rgba(0,0,0,0.6)',
                     width: 2
                 })
-            }),
+            })
+/*,
             text: new ol.style.Text({
                 text: feature.get('name'),
                 font: font,
@@ -198,16 +199,46 @@ const cityLayer = new ol.layer.Vector({
                     width: 3
                 })
             })
+*/
         });
     }
 });
 
-layers.push(cityLayer);
+map.addLayer(cityLayer);
 
 map.getView().on('change:resolution', () => {
     cityLayer.changed();
 });
 
+const lightningSource = new ol.source.Vector();
+const lightningStyle = [
+	new ol.style.Style({ 
+		image: new ol.style.Circle({ 
+			radius: 5, 
+			opacity: 0.4,
+			fill: new ol.style.Fill({ color: 'rgba(255,255,0,0.4)' }), 
+			stroke: new ol.style.Stroke({ color: 'rgba(0,0,0,0.6)', width: 1 }) 
+		}) 
+	}),
+    new ol.style.Style({
+        text: new ol.style.Text({
+            text: '⚡',
+            font: '1.2em sans-serif',
+			opacity: 0.7,
+            fill: new ol.style.Fill({
+                color: 'rgba(255, 255, 0, 0.7)'
+            })
+        })
+    })
+];
+
+const lightningLayer = new ol.layer.Vector({
+    source: lightningSource,
+    zIndex: 20,
+    style: lightningStyle
+});
+
+map.addLayer(lightningLayer);
 
 // Persist the current view (center/zoom) whenever the map finishes moving,
 // so it can be restored the next time this device opens the app.
@@ -383,6 +414,8 @@ function onImageLoadEnd() {
         }
         loadingIndicator.classList.remove('is-loading');
     }
+
+	showLightning();
 }
 
 // Attach to both WMS layers (radar data + coverage mask)
@@ -394,12 +427,60 @@ function onImageLoadEnd() {
 });
 // --- end loading indicator ---
 
+const lightningCache = new Map();
+
+
+async function updateLightning() {
+	const timestamp = currentTime.toISOString()
+		.replace('T', '_')
+		.replaceAll(':', '')
+		.replace(/\.\d{3}Z$/, '');
+
+    if (lightningCache.has(timestamp)) {
+        return;
+    }
+
+    const url = `https://radar2.yamyam.ca/lightning.php?timestamp=${encodeURIComponent(timestamp)}`;
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    const features = data.features.map(strike => {
+        return new ol.Feature({
+            geometry: new ol.geom.Point(
+                ol.proj.fromLonLat(strike.geometry.coordinates)
+            )
+        });
+    });
+
+    lightningCache.set(timestamp, features);
+}
+
+function showLightning() {
+	const timestamp = currentTime.toISOString()
+		.replace('T', '_')
+		.replaceAll(':', '')
+		.replace(/\.\d{3}Z$/, '');
+
+    if (lightningCache.has(timestamp)) {
+        lightningSource.clear();
+        lightningSource.addFeatures(
+            lightningCache.get(timestamp)
+        );
+        return;
+    }
+}
+
 function updateLayers() {
-    layers[1].getSource().updateParams({
-        'TIME': currentTime.toISOString().split('.')[0] + "Z"
+    const time = currentTime.toISOString().split('.')[0] + "Z";
+
+	updateLightning();
+
+	layers[1].getSource().updateParams({
+        'TIME': time
     });
     layers[2].getSource().updateParams({
-        'TIME': currentTime.toISOString().split('.')[0] + "Z"
+        'TIME': time
     });
 }
 

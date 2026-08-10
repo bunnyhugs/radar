@@ -424,6 +424,8 @@ const radarImageCache = new Map();
 // for the same frame while one is already loading (e.g. rapid stepping).
 const pendingFrameRequests = new Map();
 
+let viewRequestSeq = 0;
+ 
 function getTimeKey(date) {
     return date.toISOString().split('.')[0] + 'Z';
 }
@@ -441,6 +443,25 @@ function getFixedExtentAroundCenter(center) {
     ];
 }
 
+// True if the view extent is smaller than (fits within) the fixed
+// 2880x1445km area in both dimensions - i.e. caching is applicable.
+function fitsWithinFixedArea(viewExtent) {
+    return ol.extent.getWidth(viewExtent) <= RADAR_AREA_WIDTH_M &&
+        ol.extent.getHeight(viewExtent) <= RADAR_AREA_HEIGHT_M;
+}
+ 
+// Picks a pixel size proportional to the requested extent's real-world size
+// (1 px per km, matching native resolution), capped so a very zoomed-out
+// view doesn't request an enormous image.
+function getImagePixelSize(extent) {
+    const widthKm = ol.extent.getWidth(extent) / RADAR_RESOLUTION_M;
+    const heightKm = ol.extent.getHeight(extent) / RADAR_RESOLUTION_M;
+    return [
+        Math.max(1, Math.min(MAX_IMAGE_DIMENSION_PX, Math.round(widthKm))),
+        Math.max(1, Math.min(MAX_IMAGE_DIMENSION_PX, Math.round(heightKm)))
+    ];
+}
+ 
 async function fetchWmsImageBlobUrl(layerName, extent, timeKey) {
     const params = new URLSearchParams({
         SERVICE: 'WMS',
@@ -545,43 +566,60 @@ async function loadRadarFrame(timeKey) {
 
     const view = map.getView();
     const viewExtent = view.calculateExtent(map.getSize());
-    const cached = radarImageCache.get(timeKey);
-
-    if (cached && ol.extent.containsExtent(cached.extent, viewExtent)) {
-        // Already have imagery covering the current view for this time.
-        applyFrame(cached);
+    const cacheable = fitsWithinFixedArea(viewExtent);
+ 
+    if (cacheable) {
+        const cached = radarImageCache.get(timeKey);
+        if (cached && ol.extent.containsExtent(cached.extent, viewExtent)) {
+            // Already have imagery covering the current view for this time.
+            applyFrame(cached);
+            return;
+        }
+    }
+ 
+    const requestExtent = cacheable ? getFixedExtentAroundCenter(view.getCenter()) : viewExtent;
+ 
+    // Cacheable requests are deduped by time (one image serves any view
+    // within it). Uncached (zoomed-out) requests are deduped by time+extent,
+    // since a different pan/zoom needs its own fetch.
+    const dedupeKey = cacheable ? timeKey : `${timeKey}@${requestExtent.join(',')}`;
+    if (pendingFrameRequests.has(dedupeKey)) {
+        // A matching request is already in flight; let it finish rather
+        // than firing a duplicate download.
         return;
     }
-
-    if (pendingFrameRequests.has(timeKey)) {
-        // A request for this timestamp is already in flight; let it finish
-        // rather than firing a duplicate download.
-        return;
-    }
-
-    const extent = getFixedExtentAroundCenter(view.getCenter());
+ 
+    const mySeq = ++viewRequestSeq;
 
     onImageLoadStart();
     const requestPromise = (async () => {
         try {
             const [radarUrl, coverageUrl] = await Promise.all([
-                fetchWmsImageBlobUrl(RADAR_LAYER_NAME, extent, timeKey),
-                fetchWmsImageBlobUrl(COVERAGE_LAYER_NAME, extent, timeKey)
+                fetchWmsImageBlobUrl(RADAR_LAYER_NAME, requestExtent, timeKey),
+                fetchWmsImageBlobUrl(COVERAGE_LAYER_NAME, requestExtent, timeKey)
             ]);
-
-            const stale = radarImageCache.get(timeKey);
-            if (stale) {
-                revokeCachedFrame(stale);
+ 
+            const entry = { extent: requestExtent, radarUrl, coverageUrl };
+ 
+            if (cacheable) {
+                const stale = radarImageCache.get(timeKey);
+                if (stale) {
+                    revokeCachedFrame(stale);
+                }
+                radarImageCache.set(timeKey, entry);
+                evictOldestFrameIfNeeded();
             }
-
-            const entry = { extent, radarUrl, coverageUrl };
-            radarImageCache.set(timeKey, entry);
-            evictOldestFrameIfNeeded();
-
-            // Only draw it if this is still the frame currently selected
-            // (avoids flicker back to a stale frame on slow connections).
-            if (currentTime && getTimeKey(currentTime) === timeKey) {
+ 
+            const isCurrentFrame = currentTime && getTimeKey(currentTime) === timeKey;
+            // For uncached requests, only the most recent one should ever be
+            // drawn, since older ones may resolve after a newer pan/zoom.
+            const isLatestViewRequest = cacheable || mySeq === viewRequestSeq;
+ 
+            if (isCurrentFrame && isLatestViewRequest) {
                 applyFrame(entry);
+            } else if (!cacheable) {
+                // Superseded and not cached anywhere else - free it now.
+                revokeCachedFrame(entry);
             }
         } catch (err) {
             console.error(err);
@@ -589,11 +627,11 @@ async function loadRadarFrame(timeKey) {
             refreshTimes();
         } finally {
             onImageLoadEnd();
-            pendingFrameRequests.delete(timeKey);
+            pendingFrameRequests.delete(dedupeKey);
         }
     })();
-
-    pendingFrameRequests.set(timeKey, requestPromise);
+ 
+    pendingFrameRequests.set(dedupeKey, requestPromise);
     await requestPromise;
 }
 

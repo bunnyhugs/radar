@@ -221,6 +221,47 @@ const lightningLayer = new ol.layer.Vector({
 
 map.addLayer(lightningLayer);
 
+// Persist whether the lightning layer is shown, per device (mirrors the
+// radarViewState persistence used for the map view).
+const LIGHTNING_ENABLED_KEY = 'radarLightningEnabled';
+
+function getSavedLightningEnabled() {
+	try {
+		const saved = localStorage.getItem(LIGHTNING_ENABLED_KEY);
+		// Default to enabled (matches the layer's original always-on behaviour)
+		return saved === null ? true : saved === 'true';
+	} catch (e) {
+		return true;
+	}
+}
+
+let lightningEnabled = getSavedLightningEnabled();
+
+const lightningToggleButton = document.getElementById('lightningBtn');
+
+function applyLightningToggleUI() {
+	lightningLayer.setVisible(lightningEnabled);
+	lightningToggleButton.classList.toggle('is-off', !lightningEnabled);
+	lightningToggleButton.title = lightningEnabled ? 'Hide lightning' : 'Show lightning';
+}
+
+applyLightningToggleUI();
+
+lightningToggleButton.addEventListener('click', () => {
+	lightningEnabled = !lightningEnabled;
+	try {
+		localStorage.setItem(LIGHTNING_ENABLED_KEY, String(lightningEnabled));
+	} catch (e) {
+		// localStorage may be unavailable (e.g. private browsing) - fail silently
+	}
+	applyLightningToggleUI();
+	if (lightningEnabled) {
+		// The current frame's lightning data may never have been fetched
+		// while the layer was off - fetch it now and draw it right away.
+		updateLightning().then(showLightning);
+	}
+});
+
 
 // Persist the current view (center/zoom) whenever the map finishes moving,
 // so it can be restored the next time this device opens the app.
@@ -430,16 +471,34 @@ function getTimeKey(date) {
     return date.toISOString().split('.')[0] + 'Z';
 }
 
+// Snap an extent's min edges down to the nearest RADAR_RESOLUTION_M (1km)
+// grid line, anchored at the EPSG:3857 origin (0,0). Any fixed anchor works
+// here since all that matters is that repeated requests agree with each
+// other - this just needs to be consistent across calls, not "correct" in
+// an absolute sense (the WMS server still resamples internally regardless
+// of what bbox we send; this only makes *our* requests self-consistent).
+function snapDownToGrid(value, resolution) {
+    return Math.floor(value / resolution) * resolution;
+}
+
+function snapUpToGrid(value, resolution) {
+    return Math.ceil(value / resolution) * resolution;
+}
+
 // A fixed-size bbox (matching the source's native resolution/dimensions)
-// centered on the given map-projection center point.
+// centered on the given map-projection center point, snapped to the 1km
+// grid. Because RADAR_AREA_WIDTH_M/HEIGHT_M are themselves exact multiples
+// of RADAR_RESOLUTION_M, snapping just the min corner down to the grid and
+// adding the exact width/height keeps both edges grid-aligned while still
+// requesting precisely the minimum area (never more).
 function getFixedExtentAroundCenter(center) {
-    const halfWidth = RADAR_AREA_WIDTH_M / 2;
-    const halfHeight = RADAR_AREA_HEIGHT_M / 2;
+    const minX = snapDownToGrid(center[0] - RADAR_AREA_WIDTH_M / 2, RADAR_RESOLUTION_M);
+    const minY = snapDownToGrid(center[1] - RADAR_AREA_HEIGHT_M / 2, RADAR_RESOLUTION_M);
     return [
-        center[0] - halfWidth,
-        center[1] - halfHeight,
-        center[0] + halfWidth,
-        center[1] + halfHeight
+        minX,
+        minY,
+        minX + RADAR_AREA_WIDTH_M,
+        minY + RADAR_AREA_HEIGHT_M
     ];
 }
 
@@ -449,10 +508,23 @@ function fitsWithinFixedArea(viewExtent) {
     return ol.extent.getWidth(viewExtent) <= RADAR_AREA_WIDTH_M &&
         ol.extent.getHeight(viewExtent) <= RADAR_AREA_HEIGHT_M;
 }
- 
+
+// Grow an arbitrary extent outward (never inward, so the view is never
+// under-covered) so all four edges land on the 1km grid.
+function snapExtentOutwardToGrid(extent, resolution) {
+    return [
+        snapDownToGrid(extent[0], resolution),
+        snapDownToGrid(extent[1], resolution),
+        snapUpToGrid(extent[2], resolution),
+        snapUpToGrid(extent[3], resolution)
+    ];
+}
+
 // Picks a pixel size proportional to the requested extent's real-world size
 // (1 px per km, matching native resolution), capped so a very zoomed-out
-// view doesn't request an enormous image.
+// view doesn't request an enormous image. Once the extent is grid-snapped,
+// its width/height are exact km multiples, so this is just a unit
+// conversion rather than a rounding step.
 function getImagePixelSize(extent) {
     const widthKm = ol.extent.getWidth(extent) / RADAR_RESOLUTION_M;
     const heightKm = ol.extent.getHeight(extent) / RADAR_RESOLUTION_M;
@@ -471,8 +543,8 @@ async function fetchWmsImageBlobUrl(layerName, extent, timeKey) {
         TRANSPARENT: 'true',
         LAYERS: layerName,
         CRS: 'EPSG:3857',
-        WIDTH: String(RADAR_IMAGE_WIDTH_PX),
-        HEIGHT: String(RADAR_IMAGE_HEIGHT_PX),
+        WIDTH: String(RADAR_IMAGE_WIDTH_PX * 2),
+        HEIGHT: String(RADAR_IMAGE_HEIGHT_PX * 2),
         BBOX: extent.join(','),
         TIME: timeKey
     });
@@ -519,6 +591,10 @@ function applyFrame(entry) {
 const lightningCache = new Map();
 
 async function updateLightning() {
+	if (!lightningEnabled) {
+		return;
+	}
+
 	const timestamp = currentTime.toISOString()
 		.replace('T', '_')
 		.replaceAll(':', '')
@@ -545,6 +621,10 @@ async function updateLightning() {
 }
 
 function showLightning() {
+	if (!lightningEnabled) {
+		return;
+	}
+
 	const timestamp = currentTime.toISOString()
 		.replace('T', '_')
 		.replaceAll(':', '')
@@ -577,7 +657,9 @@ async function loadRadarFrame(timeKey) {
         }
     }
  
-    const requestExtent = cacheable ? getFixedExtentAroundCenter(view.getCenter()) : viewExtent;
+    const requestExtent = cacheable
+        ? getFixedExtentAroundCenter(view.getCenter())
+        : snapExtentOutwardToGrid(viewExtent, RADAR_RESOLUTION_M);
  
     // Cacheable requests are deduped by time (one image serves any view
     // within it). Uncached (zoomed-out) requests are deduped by time+extent,

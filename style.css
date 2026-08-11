@@ -28,7 +28,9 @@
 	#controller button {
 		margin-bottom: 0.1rem;
 	}
-
+	#controller button.is-off {
+		opacity: 0.45;
+	}
 
 
 @media only screen and (max-width: 768px) {

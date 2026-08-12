@@ -90,7 +90,7 @@ let layers = [
         opacity: 0.5
     }),
     new ol.layer.Image({
-        opacity: 0.5
+        opacity: 0.75
     })
 ];
 
@@ -455,14 +455,26 @@ const RADAR_IMAGE_HEIGHT_PX = 1445;
 const RADAR_AREA_WIDTH_M = RADAR_IMAGE_WIDTH_PX * RADAR_RESOLUTION_M;   // 2,880 km
 const RADAR_AREA_HEIGHT_M = RADAR_IMAGE_HEIGHT_PX * RADAR_RESOLUTION_M; // 1,445 km
 const MAX_CACHED_FRAMES = 24; // keep memory/blob-URL usage bounded
+const MAX_ZOOMED_OUT_FRAMES = 12; // separate, smaller pool - see zoomedOutImageCache below
 
 // Map of TIME (ISO string) -> { extent, radarUrl, coverageUrl } for frames
 // that have already been downloaded, where radarUrl/coverageUrl are local
 // blob URLs (so re-displaying a cached frame never touches the network).
+// Used when the view fits within the fixed 2880x1445km area (see
+// fitsWithinFixedArea): one entry per timestamp serves any view inside it.
 const radarImageCache = new Map();
 
-// In-flight requests, keyed by TIME, so we don't fire duplicate downloads
-// for the same frame while one is already loading (e.g. rapid stepping).
+// When the view is zoomed out farther than the fixed area, we request
+// exactly the current (grid-snapped) view extent instead of padding it -
+// see loadRadarFrame. That still deserves caching: an unmoving view (or an
+// animation loop revisiting the same timestamps) should reuse what's
+// already been downloaded rather than re-fetching every time. Since these
+// requests aren't a fixed size, they're cached under a TIME+extent key
+// instead of TIME alone - a different pan/zoom simply gets its own entry.
+const zoomedOutImageCache = new Map();
+
+// In-flight requests, so we don't fire duplicate downloads for the same
+// frame while one is already loading (e.g. rapid stepping/panning).
 const pendingFrameRequests = new Map();
 
 let viewRequestSeq = 0;
@@ -529,12 +541,52 @@ function getImagePixelSize(extent) {
     const widthKm = ol.extent.getWidth(extent) / RADAR_RESOLUTION_M;
     const heightKm = ol.extent.getHeight(extent) / RADAR_RESOLUTION_M;
     return [
-        Math.max(1, Math.min(MAX_IMAGE_DIMENSION_PX, Math.round(widthKm))),
-        Math.max(1, Math.min(MAX_IMAGE_DIMENSION_PX, Math.round(heightKm)))
+        Math.max(1, Math.min(RADAR_IMAGE_WIDTH_PX, Math.round(widthKm))) * 2,
+        Math.max(1, Math.min(RADAR_IMAGE_HEIGHT_PX, Math.round(heightKm))) * 2
     ];
 }
  
+// Draws a repeating diagonal crosshatch over the coverage-mask image,
+// confined to the pixels that already have alpha (i.e. only over the
+// existing "no coverage" shading, never outside its shape).
+async function applyCrosshatch(blob) {
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+
+    const hatchSize = 10;
+    const hatchTile = document.createElement('canvas');
+    hatchTile.width = hatchSize;
+    hatchTile.height = hatchSize;
+    const hctx = hatchTile.getContext('2d');
+    hctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    hctx.lineWidth = 1.25;
+    // Two diagonals (an X), tiled edge-to-edge, so the pattern repeats
+    // seamlessly in both directions.
+    hctx.beginPath();
+    hctx.moveTo(0, hatchSize);
+    hctx.lineTo(hatchSize, 0);
+    hctx.moveTo(-hatchSize / 2, hatchSize / 2);
+    hctx.lineTo(hatchSize / 2, -hatchSize / 2);
+    hctx.moveTo(hatchSize / 2, hatchSize * 1.5);
+    hctx.lineTo(hatchSize * 1.5, hatchSize / 2);
+    hctx.stroke();
+
+    // 'source-atop' only paints where the canvas already has alpha, so the
+    // hatch is clipped to the mask's existing shape and drawn on top of it.
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.fillStyle = ctx.createPattern(hatchTile, 'repeat');
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+}
+
 async function fetchWmsImageBlobUrl(layerName, extent, timeKey) {
+    const [width, height] = getImagePixelSize(extent);
     const params = new URLSearchParams({
         SERVICE: 'WMS',
         VERSION: '1.3.0',
@@ -543,8 +595,8 @@ async function fetchWmsImageBlobUrl(layerName, extent, timeKey) {
         TRANSPARENT: 'true',
         LAYERS: layerName,
         CRS: 'EPSG:3857',
-        WIDTH: String(RADAR_IMAGE_WIDTH_PX * 2),
-        HEIGHT: String(RADAR_IMAGE_HEIGHT_PX * 2),
+        WIDTH: String(width),
+        HEIGHT: String(height),
         BBOX: extent.join(','),
         TIME: timeKey
     });
@@ -554,7 +606,10 @@ async function fetchWmsImageBlobUrl(layerName, extent, timeKey) {
     if (!response.ok) {
         throw new Error(`WMS GetMap failed (${response.status}) for ${layerName} @ ${timeKey}`);
     }
-    const blob = await response.blob();
+    let blob = await response.blob();
+    if (layerName === COVERAGE_LAYER_NAME) {
+        blob = await applyCrosshatch(blob);
+    }
     return URL.createObjectURL(blob);
 }
 
@@ -563,11 +618,11 @@ function revokeCachedFrame(entry) {
     URL.revokeObjectURL(entry.coverageUrl);
 }
 
-function evictOldestFrameIfNeeded() {
-    while (radarImageCache.size > MAX_CACHED_FRAMES) {
-        const oldestKey = radarImageCache.keys().next().value;
-        revokeCachedFrame(radarImageCache.get(oldestKey));
-        radarImageCache.delete(oldestKey);
+function evictOldestFrameIfNeeded(cache, maxSize) {
+    while (cache.size > maxSize) {
+        const oldestKey = cache.keys().next().value;
+        revokeCachedFrame(cache.get(oldestKey));
+        cache.delete(oldestKey);
     }
 }
 
@@ -639,14 +694,19 @@ function showLightning() {
     }
 }
 
-// Ensure the given timestamp is displayed, downloading a new fixed-area
-// image only if it hasn't been cached yet, or the cached area no longer
-// covers the current view.
+// Ensure the given timestamp is displayed, downloading a new image only if
+// it hasn't been cached yet for the current view. When the view fits the
+// fixed 2880x1445km area, one cached image per timestamp serves any view
+// inside it. When zoomed out farther than that, the exact (grid-snapped)
+// view extent is used instead, cached per timestamp+extent, so a still
+// view - or an animation loop revisiting the same timestamps - reuses
+// what's already downloaded instead of re-fetching every time.
 async function loadRadarFrame(timeKey) {
 
     const view = map.getView();
     const viewExtent = view.calculateExtent(map.getSize());
     const cacheable = fitsWithinFixedArea(viewExtent);
+    const cache = cacheable ? radarImageCache : zoomedOutImageCache;
  
     if (cacheable) {
         const cached = radarImageCache.get(timeKey);
@@ -661,11 +721,21 @@ async function loadRadarFrame(timeKey) {
         ? getFixedExtentAroundCenter(view.getCenter())
         : snapExtentOutwardToGrid(viewExtent, RADAR_RESOLUTION_M);
  
-    // Cacheable requests are deduped by time (one image serves any view
-    // within it). Uncached (zoomed-out) requests are deduped by time+extent,
-    // since a different pan/zoom needs its own fetch.
-    const dedupeKey = cacheable ? timeKey : `${timeKey}@${requestExtent.join(',')}`;
-    if (pendingFrameRequests.has(dedupeKey)) {
+    // Cacheable requests are keyed by time (one image serves any view
+    // within it). Zoomed-out requests are keyed by time+extent, since a
+    // different pan/zoom needs its own image - but the exact same view
+    // revisited later (e.g. an animation loop) hits this cache too.
+    const cacheKey = cacheable ? timeKey : `${timeKey}@${requestExtent.join(',')}`;
+
+    if (!cacheable) {
+        const cached = zoomedOutImageCache.get(cacheKey);
+        if (cached) {
+            applyFrame(cached);
+            return;
+        }
+    }
+
+    if (pendingFrameRequests.has(cacheKey)) {
         // A matching request is already in flight; let it finish rather
         // than firing a duplicate download.
         return;
@@ -683,25 +753,21 @@ async function loadRadarFrame(timeKey) {
  
             const entry = { extent: requestExtent, radarUrl, coverageUrl };
  
-            if (cacheable) {
-                const stale = radarImageCache.get(timeKey);
-                if (stale) {
-                    revokeCachedFrame(stale);
-                }
-                radarImageCache.set(timeKey, entry);
-                evictOldestFrameIfNeeded();
+            const stale = cache.get(cacheKey);
+            if (stale) {
+                revokeCachedFrame(stale);
             }
+            cache.set(cacheKey, entry);
+            evictOldestFrameIfNeeded(cache, cacheable ? MAX_CACHED_FRAMES : MAX_ZOOMED_OUT_FRAMES);
  
             const isCurrentFrame = currentTime && getTimeKey(currentTime) === timeKey;
-            // For uncached requests, only the most recent one should ever be
-            // drawn, since older ones may resolve after a newer pan/zoom.
+            // For zoomed-out requests, only draw the most recent one, since
+            // an older one may resolve after a newer pan/zoom - it's still
+            // cached above for reuse, just not drawn now.
             const isLatestViewRequest = cacheable || mySeq === viewRequestSeq;
  
             if (isCurrentFrame && isLatestViewRequest) {
                 applyFrame(entry);
-            } else if (!cacheable) {
-                // Superseded and not cached anywhere else - free it now.
-                revokeCachedFrame(entry);
             }
         } catch (err) {
             console.error(err);
@@ -709,11 +775,11 @@ async function loadRadarFrame(timeKey) {
             refreshTimes();
         } finally {
             onImageLoadEnd();
-            pendingFrameRequests.delete(dedupeKey);
+            pendingFrameRequests.delete(cacheKey);
         }
     })();
  
-    pendingFrameRequests.set(dedupeKey, requestPromise);
+    pendingFrameRequests.set(cacheKey, requestPromise);
     await requestPromise;
 }
 

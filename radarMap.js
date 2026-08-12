@@ -293,27 +293,43 @@ const createRings = (center, numRings, spacing) => {
 const updateRings = () => {
 	const center = ol.proj.toLonLat(map.getView().getCenter());
 	const transformedCenter = ol.proj.fromLonLat(center, 'EPSG:3857');
-	const numRings = 10;  // Adjust as needed
-	const spacing = 20000;  // 40 km in meters
+	const numRings = 7;  // Adjust as needed
+	const spacing = 30000;  // in meters, 30km diameter, 15km spacing
 
 	const ringFeatures = createRings(transformedCenter, numRings, spacing);
+	const ringFeatures2 = createRings(transformedCenter, numRings * 2, spacing / 2);
 	ringSource.clear();
+	ringSource2.clear();
 	ringSource.addFeatures(ringFeatures);
+	ringSource2.addFeatures(ringFeatures2);
 };
 
 const ringSource = new ol.source.Vector();
+const ringSource2 = new ol.source.Vector();
 const ringLayer = new ol.layer.Vector({
 	source: ringSource,
 	style: new ol.style.Style({
 		stroke: new ol.style.Stroke({
-			color: 'rgba(155, 0, 0, 0.25)',
-			width: 1,
+			color: 'rgba(155, 0, 0, 0.3)',
+			width: 1.5,
 			lineDash: [10, 10]  // Dashed line style
 		})
 	})
 });
 
+const ringLayer2 = new ol.layer.Vector({
+	source: ringSource2,
+	style: new ol.style.Style({
+		stroke: new ol.style.Stroke({
+			color: 'rgba(95, 55, 55, 0.5)',
+			width: 1,
+			lineDash: [5, 5]  // Dashed line style
+		})
+	})
+});
+
 map.addLayer(ringLayer);
+map.addLayer(ringLayer2);
 
 map.getView().on('change:center', updateRings);
 map.getView().on('change:resolution', updateRings);
@@ -327,6 +343,7 @@ let ringsVisible = true;
 ringToggleButton.addEventListener('click', () => {
 	ringsVisible = !ringsVisible;
 	ringLayer.setVisible(ringsVisible);
+	ringLayer2.setVisible(ringsVisible);
     if (ringsVisible) {
 		ringToggleButton.firstElementChild.className = "fa fa-circle-dot";
 	} else {
@@ -451,7 +468,8 @@ const RADAR_LAYER_NAME = 'RADAR_1KM_RRAI';
 const COVERAGE_LAYER_NAME = 'RADAR_COVERAGE_RRAI.INV';
 const RADAR_RESOLUTION_M = 1000; // 1 km/pixel native resolution
 const RADAR_IMAGE_WIDTH_PX = 2880;
-const RADAR_IMAGE_HEIGHT_PX = 1445;
+const RADAR_IMAGE_HEIGHT_PX = 2880;
+// const RADAR_IMAGE_HEIGHT_PX = 1445;
 const RADAR_AREA_WIDTH_M = RADAR_IMAGE_WIDTH_PX * RADAR_RESOLUTION_M;   // 2,880 km
 const RADAR_AREA_HEIGHT_M = RADAR_IMAGE_HEIGHT_PX * RADAR_RESOLUTION_M; // 1,445 km
 const MAX_CACHED_FRAMES = 24; // keep memory/blob-URL usage bounded
@@ -532,6 +550,8 @@ function snapExtentOutwardToGrid(extent, resolution) {
     ];
 }
 
+const MAX_IMAGE_DIMENSION_PX = RADAR_AREA_WIDTH_M * 2;
+
 // Picks a pixel size proportional to the requested extent's real-world size
 // (1 px per km, matching native resolution), capped so a very zoomed-out
 // view doesn't request an enormous image. Once the extent is grid-snapped,
@@ -540,9 +560,18 @@ function snapExtentOutwardToGrid(extent, resolution) {
 function getImagePixelSize(extent) {
     const widthKm = ol.extent.getWidth(extent) / RADAR_RESOLUTION_M;
     const heightKm = ol.extent.getHeight(extent) / RADAR_RESOLUTION_M;
+
+    // If either dimension would exceed the cap, scale BOTH dimensions down
+    // by the same factor to preserve the bbox's aspect ratio. Clamping
+    // width/height independently (as before) would request a WIDTH:HEIGHT
+    // ratio that no longer matches the BBOX ratio whenever only one axis
+    // exceeds the cap - e.g. a wide-but-short or tall-but-narrow view
+    // (common on mobile) - which makes the WMS server stretch the image.
+    const scale = Math.min(1, MAX_IMAGE_DIMENSION_PX / widthKm, MAX_IMAGE_DIMENSION_PX / heightKm);
+
     return [
-        Math.max(1, Math.min(RADAR_IMAGE_WIDTH_PX, Math.round(widthKm))) * 2,
-        Math.max(1, Math.min(RADAR_IMAGE_HEIGHT_PX, Math.round(heightKm))) * 2
+        Math.max(1, Math.round(widthKm * scale)) * 2,
+        Math.max(1, Math.round(heightKm * scale) * 2)
     ];
 }
  

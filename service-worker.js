@@ -1,4 +1,4 @@
-const cacheName = "radar-v1.2";
+const cacheName = "radar-v1.5";
 const filesToCache = [
     "./", // Add other URLs that need to be cached here
 "./favicon.ico",

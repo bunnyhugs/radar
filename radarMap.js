@@ -550,7 +550,7 @@ function snapExtentOutwardToGrid(extent, resolution) {
     ];
 }
 
-const MAX_IMAGE_DIMENSION_PX = RADAR_AREA_WIDTH_M * 2;
+const MAX_IMAGE_DIMENSION_PX = RADAR_AREA_WIDTH_M;
 
 // Picks a pixel size proportional to the requested extent's real-world size
 // (1 px per km, matching native resolution), capped so a very zoomed-out
@@ -570,8 +570,8 @@ function getImagePixelSize(extent) {
     const scale = Math.min(1, MAX_IMAGE_DIMENSION_PX / widthKm, MAX_IMAGE_DIMENSION_PX / heightKm);
 
     return [
-        Math.max(1, Math.round(widthKm * scale)) * 2,
-        Math.max(1, Math.round(heightKm * scale) * 2)
+        Math.max(1, Math.round(widthKm * scale)) ,
+        Math.max(1, Math.round(heightKm * scale) )
     ];
 }
  

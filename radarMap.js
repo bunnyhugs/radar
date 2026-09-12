@@ -1,6 +1,6 @@
 let frameRate = 3;
 const maxFrameRate = 12;
-let timespan = 1;
+let timespan = 1; // overwritten below once getSavedTimespan/applyTimespanUI are defined
 let animationId = null;
 let startTime = null;
 let endTime = null;
@@ -472,8 +472,35 @@ const RADAR_IMAGE_HEIGHT_PX = 2880;
 // const RADAR_IMAGE_HEIGHT_PX = 1445;
 const RADAR_AREA_WIDTH_M = RADAR_IMAGE_WIDTH_PX * RADAR_RESOLUTION_M;   // 2,880 km
 const RADAR_AREA_HEIGHT_M = RADAR_IMAGE_HEIGHT_PX * RADAR_RESOLUTION_M; // 1,445 km
-const MAX_CACHED_FRAMES = 24; // keep memory/blob-URL usage bounded
-const MAX_ZOOMED_OUT_FRAMES = 12; // separate, smaller pool - see zoomedOutImageCache below
+// These used to be fixed constants (24 / 12). That was fine for the
+// original 1hr-or-3hr toggle only by coincidence: 1hr needs ~11 frames
+// (comfortably under 24) but 3hr needs ~31 - MORE than 24 - so once a full
+// animation loop no longer fits in the cache, the frame the loop is about
+// to come back to has already been evicted, forcing a re-download every
+// single lap. That's why caching appeared to "stop working" at 3hr.
+// Now that timespan can be any arbitrary value (see setTimespan), the cache
+// budget is recomputed to always fit at least one full loop, with a small
+// buffer - see updateCacheBudgets().
+let MAX_CACHED_FRAMES = 24; // keep memory/blob-URL usage bounded
+let MAX_ZOOMED_OUT_FRAMES = 12; // separate, smaller pool - see zoomedOutImageCache below
+
+// Number of 6-minute frames spanned by a given timespan (in hours),
+// inclusive of both endpoints.
+function framesForTimespan(hours) {
+    return Math.ceil((hours * 60) / 6) + 1;
+}
+
+// Recompute how many frames each cache is allowed to hold so that a full
+// animation loop for the current timespan always fits, with a small buffer
+// on top (in-flight loads, the frame just before/after the loop point,
+// etc). Never shrinks below the original defaults, so short timespans keep
+// the same generous headroom they always had.
+function updateCacheBudgets() {
+    const framesNeeded = framesForTimespan(timespan);
+    MAX_CACHED_FRAMES = Math.max(24, framesNeeded + 4);
+    MAX_ZOOMED_OUT_FRAMES = Math.max(12, framesNeeded + 4);
+}
+updateCacheBudgets();
 
 // Map of TIME (ISO string) -> { extent, radarUrl, coverageUrl } for frames
 // that have already been downloaded, where radarUrl/coverageUrl are local
@@ -959,17 +986,79 @@ function speedDown() {
     togglePlayPause();
 }
 
-function toggleTimespan() {
-    var iconElement = document.querySelector('#timespan i');
-    if (iconElement.classList.contains('fa-hourglass-half')) {
-        iconElement.classList.remove('fa-hourglass-half');
-        iconElement.classList.add('fa-hourglass-start');
-        timespan = 3;
-    } else {
-        iconElement.classList.remove('fa-hourglass-start');
-        iconElement.classList.add('fa-hourglass-half');
-        timespan = 1;
+// Timespan (hours) is stored/persisted per device, same pattern as the
+// view state and lightning toggle above.
+const TIMESPAN_KEY = 'radarTimespanHours';
+const TIMESPAN_PRESETS = [1, 3]; // what a plain click cycles through
+
+function getSavedTimespan() {
+    try {
+        const saved = parseFloat(localStorage.getItem(TIMESPAN_KEY));
+        if (isFinite(saved) && saved > 0) {
+            return saved;
+        }
+    } catch (e) {
+        // localStorage may be unavailable (e.g. private browsing)
     }
+    return null;
+}
+
+function applyTimespanUI() {
+    var iconElement = document.querySelector('#timespan i');
+    iconElement.className = timespan <= TIMESPAN_PRESETS[0]
+        ? 'fas fa-hourglass-half'
+        : (TIMESPAN_PRESETS.includes(timespan) ? 'fas fa-hourglass-start' : 'fas fa-hourglass');
+
+    const hoursLabel = Number.isInteger(timespan) ? `${timespan}` : timespan.toFixed(2).replace(/\.?0+$/, '');
+    timespanButton.title = `Timespan: ${hoursLabel} hr (click to cycle 1/3, right-click or long-press for custom)`;
+}
+
+// Change the timespan to any arbitrary number of hours (not just the 1/3
+// presets), re-sizing the caches and reloading frames for the new window.
+function setTimespan(hours) {
+    const parsed = Number(hours);
+    if (!isFinite(parsed) || parsed <= 0) {
+        return;
+    }
+    // Below one frame interval (6 min) there'd be nothing to animate.
+    timespan = Math.max(0.1, parsed);
+    try {
+        localStorage.setItem(TIMESPAN_KEY, String(timespan));
+    } catch (e) {
+        // ignore - not critical if it can't be persisted
+    }
+    updateCacheBudgets();
+    applyTimespanUI();
+    if (startTime && endTime) {
+        // Re-derive the visible window's start for the new timespan and
+        // reload frames, same as fastBackward()/refreshTimes() do.
+        const wasAtLastFrame = currentTime && endTime && currentTime.getTime() === endTime.getTime();
+        currentTime = wasAtLastFrame ? endTime : getStartTime();
+        updateLayers();
+        updateInfo();
+        updateButtons();
+    }
+}
+
+function toggleTimespan() {
+    const idx = TIMESPAN_PRESETS.indexOf(timespan);
+    const next = TIMESPAN_PRESETS[(idx === -1 ? 0 : idx + 1) % TIMESPAN_PRESETS.length];
+    setTimespan(next);
+}
+
+// Lets the user type any timespan they want (e.g. 2.5 hr, 6 hr) rather than
+// being limited to the 1/3 presets.
+function promptCustomTimespan() {
+    const input = window.prompt('Timespan to animate, in hours (e.g. 2.5):', timespan);
+    if (input === null) {
+        return; // cancelled
+    }
+    const hours = parseFloat(input);
+    if (!isFinite(hours) || hours <= 0) {
+        window.alert('Please enter a number greater than 0.');
+        return;
+    }
+    setTimespan(hours);
 }
 
 let fastBackwardButton = document.getElementById('fast-backward');
@@ -995,6 +1084,48 @@ speedDownButton.addEventListener('click', speedDown, false);
 
 let timespanButton = document.getElementById('timespan');
 timespanButton.addEventListener('click', toggleTimespan, false);
+
+// Right-click (desktop) opens the custom-timespan prompt directly.
+timespanButton.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    promptCustomTimespan();
+});
+
+// Long-press (touch devices, which have no right-click) does the same.
+let timespanLongPressTimer = null;
+let timespanLongPressFired = false;
+timespanButton.addEventListener('touchstart', () => {
+    timespanLongPressFired = false;
+    timespanLongPressTimer = window.setTimeout(() => {
+        timespanLongPressFired = true;
+        promptCustomTimespan();
+    }, 600);
+}, { passive: true });
+['touchend', 'touchmove', 'touchcancel'].forEach(evt => {
+    timespanButton.addEventListener(evt, () => {
+        window.clearTimeout(timespanLongPressTimer);
+    });
+});
+// Suppress the click that a touchend also fires, so a long-press doesn't
+// additionally cycle the presets right after opening the prompt.
+timespanButton.addEventListener('click', (e) => {
+    if (timespanLongPressFired) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        timespanLongPressFired = false;
+    }
+}, true);
+
+// Restore any previously-saved custom timespan now that everything needed
+// (localStorage helper, UI updater, the button itself) is in place.
+{
+    const saved = getSavedTimespan();
+    if (saved !== null) {
+        timespan = Math.max(0.1, saved);
+    }
+    updateCacheBudgets();
+    applyTimespanUI();
+}
 
 // Initialize the map
 function initMap() {
